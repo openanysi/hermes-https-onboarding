@@ -1,0 +1,20 @@
+OpenAny one-click setup for an existing Hermes on Ubuntu/Debian.
+Hermes itself is not installed. Existing valid stages are verified and skipped.
+
+bash install.sh --domain hermes.example.com --public-ip YOUR_PUBLIC_IP \
+  --email YOU@example.com --environment prod --seller-key-file /private/seller.key
+
+Options:
+  --seller-key-file FILE    Private 0600 file; never put a key in command arguments.
+                           Existing selected-environment configuration is reused.
+  --environment prod|dev   Seller credential environment (default: prod).
+  --user USER --home PATH  Override the detected Hermes account/home.
+  --hermes-bin PATH        Existing Hermes executable, if not discoverable.
+  --gateway-scope SCOPE   auto (default), user or system.
+  --port PORT             Loopback API port (default: 8642).
+  --check                 Preflight only; no system configuration changes.
+  --wait                  Wait for the independent job (use from SSH).
+  --status [JOB_ID]        Read latest or selected job result.
+
+The job runs outside Gateway and may restart its matching service. Seller Keys
+are provided by OpenAny and cannot be generated here. No model task is run.

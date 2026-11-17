@@ -7,9 +7,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import openany_hermes
+import setup
 
 count = 0
 image_count = 0
+installer_count = 0
 guides = [name for name in ("GUIDE.en.md", "GUIDE.zh-CN.md") if (ROOT / name).is_file()]
 assert "GUIDE.en.md" in guides
 for name in ("README.md", *guides):
@@ -20,6 +22,10 @@ for name in ("README.md", *guides):
         for line in block.replace("\\\n", " ").splitlines():
             marker = "scripts/openany_hermes.py "
             if marker not in line or "--help" in line:
+                words = shlex.split(line)
+                if words[:2] == ["bash", "install.sh"]:
+                    setup.parser().parse_args(words[2:])
+                    installer_count += 1
                 continue
             args = shlex.split(line.split(marker, 1)[1])
             parsed = openany_hermes.parser().parse_args(args)
@@ -42,3 +48,4 @@ for name in guides:
     assert "ExitOnForwardFailure=yes" in text and "127.0.0.1:19119:127.0.0.1:9119" in text, (name, "SSH tunnel must explicitly bind loopback and fail on conflicts")
 print("PASS:", count, "documented CLI examples parsed; API/service/key/renewal coverage present in", ", ".join(guides) + ". No operations executed.")
 print("PASS:", image_count, "local screenshot references resolve to packaged PNG files.")
+print("PASS:", installer_count, "one-command installer examples parsed without executing setup.")

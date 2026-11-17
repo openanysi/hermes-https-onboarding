@@ -1,58 +1,72 @@
-# OpenAny Hermes HTTPS Onboarding
+# OpenAny Hermes HTTPS — one-command setup
 
-Version 0.1.1 · 2026-11-17
+Version **0.2.0** · Ubuntu/Debian · existing Hermes required
 
-Configure an **existing Hermes installation** on an Ubuntu/Debian VPS so OpenAny can call its native Runs API over HTTPS.
+Configure native Hermes API access, its private key, the OpenAny Seller Key, Nginx HTTPS and certificate renewal with one installer. Existing valid configuration is verified and skipped. Hermes itself is never installed.
 
-- **Provider documentation:** [English guide](GUIDE.en.md)
-- **Verification evidence and limits:** [Validation report](VALIDATION.md)
+## Run
 
-Both guides include the supplied Hermes Dashboard screenshots, with steps for **Channels → API server → Configure → Save & Enable → Restart Gateway**. Keep the `assets/` directory beside the guide when sharing it; the provider ZIP includes those images for offline viewing.
+Download [install.sh](https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.2.0/install.sh), then run it on the VPS as the Hermes account:
 
-After a Dashboard save, use `api-config --require-existing-key --apply` with the correct `--home` before the final Gateway restart. This exports the saved credential without generating a different one and synchronizes ordinary YAML API-disable flags. The illustrated guide distinguishes the Dashboard, SSH tunnel and working terminal so these foreground sessions do not block the next step.
+```bash
+curl --fail --location --silent --show-error \
+  'https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.2.0/install.sh' \
+  --output install.sh
+bash install.sh \
+  --domain hermes.example.com \
+  --public-ip 203.0.113.10 \
+  --email ops@example.com \
+  --environment prod \
+  --seller-key-file /absolute/private/seller.key
+```
 
-The toolkit enables Hermes API Server, reuses or generates its Bearer key, configures an isolated Nginx virtual host, obtains a Let's Encrypt certificate, and configures automatic renewal. It also provides read-only checks and configuration backup/restore.
+Replace the example domain, IP, email and path. Use `--environment dev` for a Dev Seller Key. Include every intended A/AAAA address using repeated `--public-ip`. DNS and cloud firewall rules must already allow the domain and ports 80/443.
 
-SSH is used to access the VPS. Nginx and TLS provide HTTPS. This toolkit does not change SSH daemon settings or require OpenAny to hold your SSH credentials.
+The Seller Key file must contain only the real token and have mode `0600`. The installer can reuse its private selected-environment configuration or an existing selected Seller Key in the Hermes home's `.env`; omit `--seller-key-file` in that case. From an interactive SSH terminal, missing credentials can be entered at a hidden prompt. From Hermes, provide a private file or existing configuration; never paste a key into chat or a command argument.
 
-## Download or clone
+Root privileges are required for Nginx/systemd. The script uses `sudo -n`; if it is unavailable, run the same command with `sudo` from an authorized SSH session. A direct root invocation needs `--user YOUR_HERMES_USER`. Custom homes/executables can be provided with `--home` and `--hermes-bin`. The one-command worker requires the distribution `/usr/bin/python3` to be version 3.9 or later.
+
+## Check the result
+
+```bash
+bash install.sh --status
+```
+
+Setup runs in an independent systemd service, outside Gateway's process group. It can restart the matching Gateway and continue even if the initiating Hermes session disconnects. The initial `queued` response is a receipt, not completion. The installer prints an exact status command and private result-file path; `--status` reports `completed` or `failed`. From SSH you may add `--wait` to the setup command. Use `--check` for a preflight without system configuration changes.
+
+The result includes the HTTPS origin, `/v1/runs`, discovery addresses, private credential locations, backups, and external-verification status. No model task, file upload or buyer billing test is started automatically.
+
+## Credentials
+
+- Hermes `API_SERVER_KEY`: reused or generated, stored in `HERMES_HOME/openany-api.key`.
+- OpenAny Seller Key: supplied by OpenAny, never generated here. Production uses `OPENANY_SELLER_KEY`; Dev uses `OPENANY_DEV_SELLER_KEY`.
+- The selected Seller Key and `OPENANY_TASK_ROOT` are stored in `HERMES_HOME/.openany-provider/prod.env` or `dev.env`, mode `0600`, and loaded by the selected Gateway through a managed `EnvironmentFile` drop-in. The worker checks the selected service's loaded process environment without printing it.
+
+These keys are distinct from model-provider keys and buyer API keys. Seller credential loading is checked locally; its remote validity, automatic file delivery and settlement are not claimed or tested by this installer. Existing OpenAny upload/callback tooling still needs to be available for those business features.
+
+## Downloads and details
 
 - [Latest release](https://github.com/openanysi/hermes-https-onboarding/releases/latest)
-- [Download the v0.1.1 toolkit ZIP](https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.1.1/openany-hermes-https-onboarding-v0.1.1.zip)
-- [Download the ZIP SHA-256 checksum](https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.1.1/openany-hermes-https-onboarding-v0.1.1.zip.sha256)
+- [v0.2.0 ZIP](https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.2.0/openany-hermes-https-onboarding-v0.2.0.zip)
+- [ZIP SHA-256](https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.2.0/openany-hermes-https-onboarding-v0.2.0.zip.sha256)
+- [Advanced manual guide with screenshots](GUIDE.en.md)
+- [Validation evidence and limitations](VALIDATION.md)
 
-The release ZIP extracts into `hermes-https-onboarding/`, matching the directory names in the guide. Keep its `assets/` directory with the documentation for offline screenshots. GitHub's automatically generated source archives may use a version-suffixed directory name; rename it to `hermes-https-onboarding` or adjust the guide's paths.
-
-To get the source directly:
+The standalone installer downloads and verifies its fixed release ZIP; the ZIP can also be unpacked and its bundled `install.sh` run locally. You can obtain the source directly:
 
 ```bash
 git clone https://github.com/openanysi/hermes-https-onboarding.git
 cd hermes-https-onboarding
 ```
 
-## Start here
+User configuration is applied as the Hermes Linux account. System changes are limited to the selected Gateway, managed Nginx site, certificate tooling and required dependencies. Unknown/ambiguous services and conflicting sites cause an error rather than takeover. Existing plain user/system units named `hermes-gateway*.service` are detected by their pinned home; unmanaged listeners and complex service layouts require manual integration. The selected Gateway is enabled at boot; user services also have lingering enabled so they keep running after logout. Gateway restarts can interrupt in-flight work; the separate installer continues and records progress.
 
-Read the English guide first. On the VPS, run configuration commands as the same Linux account that owns your Hermes home:
+This is local-tested software, not a real VPS acceptance result. Actual systemd execution/restart survival, public certificate issuance/renewal and OpenAny's external reachability still need provider-side acceptance. The script does not change SSH, DNS, cloud firewall rules, model-provider settings or product prices.
 
-```bash
-python3 -B scripts/openany_hermes.py --help
-python3 -B scripts/openany_hermes.py api-config --home "$HOME/.hermes"
-python3 -B scripts/openany_hermes.py api-config --home "$HOME/.hermes" --apply
-```
-
-Then start/restart the **existing Hermes Gateway** as described in the guide. API configuration does not automatically restart or install a Gateway service.
-
-Preview is the default for `api-config`, `https`, and `restore`; changes require `--apply`. `check` and `verify` are read-only and never create model tasks. Public verification requires a valid, trusted HTTPS certificate; HTTP is permitted only for loopback checks.
-
-Supported scope: Python 3.9+, Ubuntu/Debian with systemd, Nginx using `/etc/nginx/conf.d/*.conf`, distribution-packaged Certbot with `certbot.timer`, a directly reachable domain, and one Hermes API listener. Named-profile URL multiplexing, containers, CDN termination, DNS-provider automation and managed SSH operations require separate integration.
-
-## Development checks
+## Tests
 
 ```bash
 python3 -B -m unittest discover -s tests -v
+python3 -B tests/check_docs.py
 NGINX_BINARY=/absolute/path/to/nginx python3 -B tests/nginx_integration.py
 ```
-
-The second suite runs Nginx with a local HTTP fixture and temporary test certificate. It does not call a real Hermes instance, OpenAny or any model provider.
-
-This package has no external Python dependencies. Its scripts are local tools; no production system is changed merely by downloading or unpacking the archive.

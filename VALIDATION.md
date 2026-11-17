@@ -1,6 +1,6 @@
 # Local validation report
 
-Release candidate: 0.1.1 · 2026-11-17
+Release candidate: 0.2.0 · 2026-11-17
 
 ## Verified locally
 
@@ -8,9 +8,9 @@ The toolkit was developed in an isolated new directory on macOS. No existing Ope
 
 | Check | Result |
 | --- | --- |
-| Unit/CLI regression suite | 34 tests passed |
+| Unit/CLI regression suite | 55 tests passed |
 | Real Nginx integration suite | 9 tests passed |
-| English and Chinese guide command examples | Parsed against the actual CLI; see the documentation-check log |
+| Packaged guide command examples | Parsed against the actual CLI; see the documentation-check log |
 | Generated bootstrap, TLS and IPv6 site variants | Passed real Nginx syntax validation |
 | Provider release contents | English documentation and tools; Chinese internal guide excluded |
 | Illustrated setup instructions | Both supplied v0.23.1 screenshots embedded in each guide; local PNG references and bundled image bytes checked |
@@ -18,6 +18,24 @@ The toolkit was developed in an isolated new directory on macOS. No existing Ope
 The unit suite covers preview without writes, reuse of existing credentials, preservation of model-provider settings, duplicate assignment cleanup, private file permissions, rejection of symlinks/interpolated keys, YAML-key protection, domain/port validation, dual-stack DNS mismatch, existing-site conflict, exclusive locking, partial-write recovery, certificate/TLS validation failure recovery, Nginx validation failure recovery, backup target restrictions, discovery schemas, and an actual CLI API-configuration/restore round trip.
 
 Version 0.1.1 adds Dashboard disable-flag synchronization in all three supported block-style YAML locations, refusal to invent a key during a Dashboard handoff, early rejection of short/placeholder keys, preservation of multiline non-API dotenv values, rejection of ambiguous YAML mappings/anchors, preservation of a model alias during key synchronization, recovery of YAML and key settings together, and public ACME-directory permissions under a restrictive umask.
+
+## Version 0.2.0 one-command setup
+
+The new `install.sh` entry point targets an existing Hermes installation only. It downloads and verifies the fixed release when run standalone, and submits an independent systemd job. The worker composes the existing API and HTTPS tools, preserves private API keys, configures an environment-specific OpenAny Seller Key, binds its private environment file to the selected Gateway unit, and records progress outside the initiating Gateway.
+
+The 21 additional tests cover:
+
+- Prod/Dev Seller Key isolation, literal metacharacters, private file permissions, task-root permissions, preserved Hermes/model settings and repeated credential setup.
+- Rejection of missing/private-file misuse without generating a Seller Key or modifying API settings.
+- Matching Gateway units by home/account and refusal of ambiguous units.
+- Stripped user command environments, secret transmission by stdin rather than argv, safe drop-in quoting, and matching selected loaded-process credentials.
+- Independent job command construction, ordered stages, verified skip paths, stale runtime fingerprints, stopped-on-failure behavior, installer help and CLI parsing.
+- UTF-8 systemd environment paths without JSON-style Unicode escapes that systemd would interpret differently.
+- Runtime-bundle readability under a private umask and persistent boot configuration for an existing user Gateway.
+
+Systemd commands, service discovery/restarts and `/proc` credential matching are tested with fixtures or mocked command boundaries. No actual root installer, systemd transient service or live Gateway restart was performed on the macOS test host. The independent-job design is based on [systemd-run service semantics](https://www.freedesktop.org/software/systemd/man/latest/systemd-run.html) and [Hermes service management](https://hermes-agent.nousresearch.com/docs/user-guide/messaging); real VPS restart survival still needs acceptance. Bootstrap Bash syntax and its no-side-effect help path are checked locally.
+
+Seller Key handling follows the OpenAny CLI's separate `OPENANY_SELLER_KEY` / `OPENANY_DEV_SELLER_KEY` contract. The installer reports `remote_verified: false`; it does not perform a real callback, artifact upload, purchase, model run or settlement test, and it does not install unpublished CLI/automatic-delivery features.
 
 The integration suite runs **real Nginx 1.26.3**, built from the official source archive, against a local Python HTTP fixture and a temporary self-signed test certificate. The test process trusts that certificate only for the local test. It verifies:
 
@@ -48,7 +66,7 @@ This is a **local-tested release candidate, not a production VPS acceptance resu
 - Ubuntu/Debian package installation and actual systemd service lifecycle.
 - Real public DNS, cloud firewall rules, inbound reachability and IPv6 routing.
 - A publicly trusted certificate for an actual domain, CA registration and live renewal/deploy-hook execution.
-- A real Hermes Gateway loading the configuration and executing the intended Skill.
+- A real Hermes Gateway loading the configuration, consuming its Seller Key, surviving the new installer worker's restart and executing the intended Skill.
 - OpenAny environment-specific form persistence, Hermes async adapter deployment, hosted-file delivery and buyer billing.
 
 Mocked certificate failures exercise file recovery; they are not evidence of live ACME issuance. The local API fixture is not a Hermes installation. No real model task, purchase, balance change or production deployment was performed.

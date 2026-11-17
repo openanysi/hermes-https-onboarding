@@ -1,8 +1,10 @@
 # Publish your Hermes endpoint over HTTPS
 
+For one-command setup including the OpenAny Seller Key and an independent background job, use the [README](README.md). This page is the advanced manual API/TLS reference.
+
 This guide is for a provider who already runs Hermes on an Ubuntu/Debian VPS and wants OpenAny to call its native API. It includes **enabling API Server, configuring its access key, keeping Gateway running, and configuring HTTPS**.
 
-Toolkit version **0.1.1**. Follow this sequence: **save API settings → synchronize the private key file → start/restart Gateway once → verify locally → configure HTTPS → verify from a second host**. Do not continue past a failed check.
+Toolkit version **0.2.0**. Follow this sequence: **save API settings → synchronize the private key file → start/restart Gateway once → verify locally → configure HTTPS → verify from a second host**. Do not continue past a failed check.
 
 The result is:
 
@@ -37,7 +39,7 @@ Host hermes-provider
 
 Use the account that owns the Hermes installation. Verify the server's host-key fingerprint through your hosting console on the first connection; do not disable SSH host-key checking. If you already use another login method, keep using it.
 
-Get the ZIP and matching `.sha256` file from the [official GitHub release](https://github.com/openanysi/hermes-https-onboarding/releases/latest). In the local download directory, verify it on Linux with `sha256sum -c openany-hermes-https-onboarding-v0.1.1.zip.sha256`, or on macOS with `shasum -a 256 -c openany-hermes-https-onboarding-v0.1.1.zip.sha256`. Then unpack with `unzip openany-hermes-https-onboarding-v0.1.1.zip`. The toolkit directory is `hermes-https-onboarding`. You can also clone the source as shown in the README. Upload that directory from your computer:
+Get the ZIP and matching `.sha256` file from the [official GitHub release](https://github.com/openanysi/hermes-https-onboarding/releases/latest). In the local download directory, verify it on Linux with `sha256sum -c openany-hermes-https-onboarding-v0.2.0.zip.sha256`, or on macOS with `shasum -a 256 -c openany-hermes-https-onboarding-v0.2.0.zip.sha256`. Then unpack with `unzip openany-hermes-https-onboarding-v0.2.0.zip`. The toolkit directory is `hermes-https-onboarding`. You can also clone the source as shown in the README. Upload that directory from your computer:
 
 ```bash
 scp -r hermes-https-onboarding hermes-provider:~/

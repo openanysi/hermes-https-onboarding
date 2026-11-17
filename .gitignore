@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+.env.*
+*.key
+*.pem
+config.yaml
+gateway.json
+.openany-backups/
+.openany-config.lock
+*.zip

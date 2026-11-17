@@ -1,0 +1,2 @@
+PASS: 13 documented CLI examples parsed; API/service/key/renewal coverage present in GUIDE.en.md. No operations executed.
+PASS: 2 local screenshot references resolve to packaged PNG files.

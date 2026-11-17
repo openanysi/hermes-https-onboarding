@@ -1,0 +1,14 @@
+test_authenticated_discovery_and_auth_failure (__main__.NginxIntegration.test_authenticated_discovery_and_auth_failure) ... ok
+test_bootstrap_and_ipv6_site_variants_pass_nginx_syntax (__main__.NginxIntegration.test_bootstrap_and_ipv6_site_variants_pass_nginx_syntax) ... ok
+test_dashboard_saved_configuration_key_file_and_https_handoff (__main__.NginxIntegration.test_dashboard_saved_configuration_key_file_and_https_handoff) ... ok
+test_http_acme_serves_file_and_other_routes_redirect (__main__.NginxIntegration.test_http_acme_serves_file_and_other_routes_redirect) ... ok
+test_nonallowlisted_routes_do_not_reach_backend (__main__.NginxIntegration.test_nonallowlisted_routes_do_not_reach_backend) ... ok
+test_run_body_path_auth_and_idempotency_are_preserved (__main__.NginxIntegration.test_run_body_path_auth_and_idempotency_are_preserved) ... ok
+test_sse_first_frame_arrives_before_completion (__main__.NginxIntegration.test_sse_first_frame_arrives_before_completion) ... ok
+test_status_query_string_is_preserved (__main__.NginxIntegration.test_status_query_string_is_preserved) ... ok
+test_tls_untrusted_certificate_is_rejected (__main__.NginxIntegration.test_tls_untrusted_certificate_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.788s
+
+OK

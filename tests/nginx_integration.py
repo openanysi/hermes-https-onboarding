@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import common
 import hermes_api
 import https_proxy
+import nginx_shared
 
 FIXTURE_KEY = "local-fixture-only-not-a-real-credential"
 NGINX = os.environ.get("NGINX_BINARY")
@@ -104,6 +105,10 @@ class NginxIntegration(unittest.TestCase):
         cls.acme.mkdir(parents=True)
         (cls.acme / "test-token").write_text("local-acme-fixture")
         body = https_proxy.render_site("hermes.example.test", cls.backend.server_port, True, False)
+        # Match new-site setup: create TLS, then add the same managed CLI
+        # namespace used by shared-site setup.
+        selected = nginx_shared.select_site({str(cls.root / 'site.conf'): body}, 'hermes.example.test')
+        body = nginx_shared.patch_site(body, selected, cls.backend.server_port)
         body = body.replace("listen 80;", f"listen 127.0.0.1:{cls.http_port};").replace("listen 443 ssl;", f"listen 127.0.0.1:{cls.tls_port} ssl;")
         body = body.replace("/var/lib/openany-hermes/acme", str(cls.root / "acme"))
         body = body.replace("/etc/letsencrypt/live/openany-hermes-hermes.example.test/fullchain.pem", str(cert)).replace("/etc/letsencrypt/live/openany-hermes-hermes.example.test/privkey.pem", str(key))
@@ -146,6 +151,24 @@ class NginxIntegration(unittest.TestCase):
         self.assertEqual(result["model_tasks_started"], 0)
         with self.assertRaises(common.Failure):
             common.verify_api(self.base, "wrong-placeholder")
+
+    def test_new_site_exposes_the_same_prefixed_authenticated_discovery(self):
+        result = common.verify_api(self.base, FIXTURE_KEY, lambda base, path, key=None: common.request_json(base, '/openany' + path, key))
+        self.assertTrue(result['authenticated'])
+        self.assertEqual(result['skill_count'], 1)
+
+    def test_new_site_prefixed_runs_and_status_keep_the_native_path(self):
+        headers = {'Authorization': 'Bearer ' + FIXTURE_KEY, 'Content-Type': 'application/json', 'Idempotency-Key': 'new-site-fixture'}
+        body = b'{"input":"local route fixture"}'
+        request = urllib.request.Request(self.base + '/openany/v1/runs', data=body, headers=headers)
+        with self.opener().open(request, timeout=3) as response:
+            self.assertEqual(response.status, 202)
+        self.assertEqual(Fixture.seen[-1]['path'], '/v1/runs')
+        self.assertEqual(Fixture.seen[-1]['body'], body)
+        request = urllib.request.Request(self.base + '/openany/v1/runs/run_localfixture', headers=headers)
+        with self.opener().open(request, timeout=3) as response:
+            self.assertEqual(json.load(response)['status'], 'completed')
+        self.assertEqual(Fixture.seen[-1]['path'], '/v1/runs/run_localfixture')
 
     def test_dashboard_saved_configuration_key_file_and_https_handoff(self):
         # A source-shaped Dashboard fixture, not an actual Hermes process.

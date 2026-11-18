@@ -7,8 +7,9 @@ import re
 import common
 import setup_user
 from common import Failure
+from release import PRODUCTION_CLI_VERSION
 
-PACKAGES = {'prod': ('openany-cli', '0.3.12', 'openany', 'https://api.openany.si'),
+PACKAGES = {'prod': ('openany-cli', PRODUCTION_CLI_VERSION, 'openany', 'https://api.openany.si'),
             'dev': ('openany-cli-dev', '0.1.5', 'openany-dev', 'https://api-dev.openany.si')}
 
 
@@ -23,6 +24,12 @@ def validate_help(environment, text, node_version):
     origin = PACKAGES[environment][3]
     if origin not in text or 'seller hermes serve' not in text or 'seller tasks upload' not in text:
         raise Failure('The selected CLI is outdated or belongs to another environment. Use the published ' + PACKAGES[environment][0] + ' package.')
+
+
+def validate_package(environment, name, version):
+    expected, pinned, _, _ = PACKAGES[environment]
+    if name != expected or version != pinned:
+        raise Failure('This poll installer requires the tested ' + expected + '@' + pinned + ' package. CLI command names alone do not establish poll compatibility. Install that version in an approved private location and select --cli-bin; no global CLI or delivery mode was changed.')
 
 
 def check_capabilities(caps):

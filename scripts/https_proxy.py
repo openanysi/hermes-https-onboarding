@@ -10,9 +10,25 @@ import subprocess
 import sys
 
 import common
+import prerequisites
 from common import Failure
 
 MARKER = "# Managed by OpenAny Hermes onboarding v1"
+
+
+def verify_tls(domain, opener=None):
+    """Any real HTTP response proves TLS negotiation, not API readiness."""
+    import urllib.request
+    import urllib.error
+    opener = opener or urllib.request.build_opener(urllib.request.ProxyHandler({}), common.NoRedirect())
+    try:
+        with opener.open('https://' + common.domain_name(domain) + '/', timeout=15):
+            pass
+    except urllib.error.HTTPError as response:
+        response.close()
+    except (OSError, ValueError):
+        raise prerequisites.https_required() from None
+    return {'tls_handshake_verified': True, 'external_reachability': 'requires_independent_host'}
 
 
 class Paths:

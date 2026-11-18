@@ -19,8 +19,9 @@ import https_proxy
 import setup_runtime
 import setup_user
 import cli_delivery
+import prerequisites
+from release import VERSION
 
-VERSION = "0.3.1"
 STATE = Path("/var/lib/openany-hermes/setup")
 
 
@@ -38,6 +39,7 @@ def parser():
     p.add_argument("--relay-port", type=int, help="Private CLI port, default 8790 in prod or 8791 in Dev")
     p.add_argument("--environment", choices=("prod", "dev"), default="prod")
     p.add_argument("--seller-key-file", type=Path, help="Private file; never pass the key value in arguments")
+    p.add_argument("--save-seller-key", action="store_true", help="In an independent terminal, save hidden Seller Key input to a new private file; no setup or service changes")
     p.add_argument("--user")
     p.add_argument("--home", type=Path)
     p.add_argument("--hermes-bin")
@@ -87,11 +89,13 @@ def systemd_job_command(bundle, job):
     return ["systemd-run", "--unit=openany-hermes-setup-" + job, "--no-block", "--collect", "--property=Type=exec", "--property=ExecStartPre=/usr/bin/sleep 3", "--property=RuntimeMaxSec=1800", "--property=TimeoutStopSec=20", "/usr/bin/python3", "-B", str(Path(bundle) / "scripts/setup.py"), "--worker", job]
 
 
-def seller_input(args, user):
+def seller_input(args, user, interactive=True):
     name = setup_user.seller_variable(args.environment)
     if args.seller_key_file:
         if not args.seller_key_file.is_absolute():
             raise common.Failure("Use an absolute --seller-key-file path so it cannot change meaning after sudo.")
+        if not args.seller_key_file.exists():
+            raise prerequisites.seller_required(args.environment, user)
         return setup_runtime.read_secret(args.seller_key_file, user["uid"])
     value = os.environ.get(name, "").strip()
     if value:
@@ -101,7 +105,9 @@ def seller_input(args, user):
         info = common.regular_file(path).stat()
         if info.st_uid != user["uid"] or info.st_mode & 0o077:
             raise common.Failure("Existing Seller Key environment file has unsafe ownership or permissions.")
-        return setup_user.validate_seller(setup_user.read_environment(path).get(name, ""))
+        value = setup_user.read_environment(path).get(name, "")
+        if value:
+            return setup_user.validate_seller(value)
     # The selected .env is a data source only; never source or print it.
     env_path = Path(user["home"]) / ".env"
     if env_path.exists():
@@ -123,9 +129,37 @@ def seller_input(args, user):
                 values = shlex.split(raw, comments=True)
                 if len(values) == 1:
                     return setup_user.validate_seller(values[0])
-    if sys.stdin.isatty():
+    if interactive and sys.stdin.isatty():
+        print(str(prerequisites.seller_required(args.environment, user)), file=sys.stderr)
         return setup_user.validate_seller(getpass.getpass("OpenAny " + args.environment + " Seller Key (hidden): ").strip())
-    raise common.Failure("Seller Key is missing. Provide --seller-key-file with a private file, or configure the selected environment securely. Never paste the key into chat or command arguments.")
+    raise prerequisites.seller_required(args.environment, user)
+
+
+def save_seller_key(args, user):
+    path = args.seller_key_file
+    if path is None or not path.is_absolute():
+        raise common.Failure("Use --save-seller-key with an absolute --seller-key-file path in a private directory.")
+    if os.geteuid() != user['uid']:
+        raise common.Failure("Save the key as the selected Hermes account, without sudo changing the owner.")
+    if path.exists() or path.is_symlink():
+        raise common.Failure("A Seller Key file already exists; reuse it. It will not be overwritten or rotated.")
+    if not sys.stdin.isatty():
+        raise prerequisites.seller_required(args.environment, user)
+    parent = path.parent
+    if parent.is_symlink():
+        raise common.Failure("Use a private directory, not a symlink.")
+    if parent.exists():
+        info = parent.stat()
+        if info.st_uid != user['uid'] or info.st_mode & 0o077:
+            raise common.Failure("The key directory must belong to the Hermes account with mode 0700; no directory permissions were changed.")
+    else:
+        parent.mkdir(mode=0o700, parents=True)
+    key = setup_user.validate_seller(getpass.getpass("OpenAny production Seller Key (hidden): " if args.environment == 'prod' else "OpenAny Dev Seller Key (hidden): ").strip())
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    with os.fdopen(fd, 'w') as output:
+        os.fchmod(output.fileno(), 0o600)
+        output.write(key + '\n')
+    return {'ok': True, 'state': 'seller_key_saved', 'seller_key_file': str(path), 'environment': args.environment, 'remote_verified': False, 'setup_started': False}
 
 
 def install_bundle(base=None):
@@ -178,6 +212,8 @@ def queue(args):
     user = setup_runtime.identity(args.user, args.home)
     if args.status:
         return read_status(user, args.status, args.wait)
+    if args.save_seller_key:
+        return save_seller_key(args, user)
     setup_user.check_environment(user['home'], args.environment)
     if args.new_site and (not args.domain or not args.email or not args.public_ip):
         raise common.Failure("Only --new-site requires --domain, --public-ip and --email. The default reuses an existing HTTPS site.")
@@ -195,15 +231,16 @@ def queue(args):
     runtime.discover_cli()
     if args.new_site:
         https_proxy.check_dns(domain, args.public_ip)
+        runtime.inspect_new_site()
     else:
         selected = runtime.inspect_site()
         config.update(domain=selected["domain"], nginx_site=selected["path"], site_sha256=selected["sha256"])
         domain = selected["domain"]
+        runtime.verify_existing_tls()
     config['files_required'] = args.files
     cli_delivery.listing(domain, args.environment, args.skills, args.files)
     if args.check:
-        if args.seller_key_file:
-            setup_runtime.read_secret(args.seller_key_file, user["uid"])
+        seller_input(args, user, interactive=False)
         return {"ok": True, "state": "checked", "hermes_home": user["home"], "hermes_user": user["username"], "hermes_executable": runtime.hermes, "environment": args.environment, "domain": domain, "runs_url": "https://" + domain + "/openany/v1/runs", "cli": runtime.cli, "system_changes": False, "seller_key_required": "private file or existing selected-environment configuration", "seller_key_remote_verified": False}
     if os.geteuid() != 0:
         raise common.Failure("Run the installer with sudo; user configuration will still run as the Hermes account.")
@@ -265,7 +302,10 @@ def main():
     try:
         value = worker(args.worker) if args.worker else queue(args)
     except common.Failure as error:
-        print(json.dumps({"ok": False, "error": str(error)}), file=sys.stderr)
+        value = {"ok": False, "error": str(error)}
+        if isinstance(error, prerequisites.Required):
+            value.update(code=error.code, next_steps=error.next_steps, setup_started=False)
+        print(json.dumps(value), file=sys.stderr)
         return 1
     except Exception:
         print(json.dumps({"ok": False, "error": "Setup could not complete. Check paths, account permissions and the private job status; no secrets were printed."}), file=sys.stderr)

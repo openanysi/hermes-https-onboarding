@@ -149,6 +149,9 @@ def select_site(sources, domain=None, site_path=None):
                 raise Failure('Managed API routes belong to another server block.')
             auth_request = any(token[0] == 'auth_request' for source in sources.values() for token in tokens(source))
             candidates.append({'domain': chosen, 'path': path, 'text': text, 'end': node['end'], 'auth_request': auth_request, 'sha256': hashlib.sha256(text.encode()).hexdigest()})
+    if not candidates:
+        import prerequisites
+        raise prerequisites.https_required()
     if len(candidates) != 1:
         raise Failure('Select one existing HTTPS site with --domain and, if needed, --nginx-site. No new domain is required.')
     return candidates[0]

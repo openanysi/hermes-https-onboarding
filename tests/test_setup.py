@@ -73,7 +73,7 @@ class SetupTests(unittest.TestCase):
             runner = runtime.Runtime(config, Path("/opt/bundle"), Path("/tmp/state"))
             def as_user(args, *values, **kwargs):
                 if "-c" in args:
-                    value = json.dumps({"node": "/node/bin/node", "npm": "/node/npm.js", "cli": "/tools/openany-dev.js"})
+                    value = json.dumps({"node": "/node/bin/node", "npm": "/node/npm.js", "cli": "/tools/openany-dev.js", "package_name": "openany-cli-dev", "package_version": "0.1.5"})
                 elif args[-1] == "--version": value = "v22.22.0"
                 else: value = "https://api-dev.openany.si\nseller hermes serve\nseller tasks upload"
                 return SimpleNamespace(returncode=0, stdout=value)
@@ -140,8 +140,9 @@ class SetupTests(unittest.TestCase):
             fake.discover_hermes = lambda: None
             fake.discover_cli = lambda: None
             fake.inspect_site = lambda: {"domain":"existing.example.com", "path":"/etc/nginx/site.conf", "sha256":"fixture"}
+            fake.verify_existing_tls = lambda: None
             args = setup.parser().parse_args(["--check", "--environment", "dev"])
-            with patch.object(setup.https_proxy,"check_os"), patch.object(setup.setup_runtime,"identity",return_value=user), patch.object(setup.setup_runtime,"Runtime",return_value=fake):
+            with patch.object(setup.https_proxy,"check_os"), patch.object(setup.setup_runtime,"identity",return_value=user), patch.object(setup.setup_runtime,"Runtime",return_value=fake), patch.object(setup,"seller_input",return_value='fixture-seller'):
                 result = setup.queue(args)
             self.assertEqual(result["runs_url"],"https://existing.example.com/openany/v1/runs")
             self.assertFalse(result["system_changes"])

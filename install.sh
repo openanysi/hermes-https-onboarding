@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-OPENANY_SETUP_VERSION=0.3.1
+OPENANY_SETUP_VERSION=0.3.2
+OPENANY_SETUP_STATE=published
 
 for OPENANY_ARGUMENT in "$@"; do
     if [[ "$OPENANY_ARGUMENT" == --version ]]; then
@@ -10,11 +11,21 @@ for OPENANY_ARGUMENT in "$@"; do
     if [[ "$OPENANY_ARGUMENT" == --help || "$OPENANY_ARGUMENT" == -h ]]; then
         cat <<'HELP'
 OpenAny one-click setup for an existing Hermes on Ubuntu/Debian.
-Hermes itself is not installed. Existing HTTPS domain and certificate are reused.
+Hermes itself is not installed. Prepare it first using the official installation guide:
+https://hermes-agent.nousresearch.com/docs/getting-started/installation
+Verify model/Gateway readiness after non-interactive installation.
 Node.js 22+ is required; the environment-specific CLI is reused or installed privately.
 
 bash install.sh --domain YOUR_EXISTING_HERMES_DOMAIN \
-  --environment prod --seller-key-file /private/seller.key --skill YOUR_SKILL
+  --environment prod --seller-key-file /private/seller.key
+
+Reuse an existing valid HTTPS site (default); no new DNS or certificate is needed.
+For a new site, add --new-site --public-ip YOUR_PUBLIC_IP --email YOUR_EMAIL.
+Missing Seller Key: open https://openany.si/seller-console/settings#seller-key,
+select the intended seller and save the token privately from an independent SSH terminal:
+bash install.sh --save-seller-key --user YOUR_USER --home YOUR_HERMES_HOME \
+  --seller-key-file /absolute/private/seller.key
+Then rerun setup with only that file path; never paste the key into chat.
 
 Options:
   --domain DOMAIN         Existing HTTPS hostname; auto-selected if exactly one exists.
@@ -27,6 +38,7 @@ Options:
   --new-site              Only for a new site; requires domain, public-ip and email.
   --seller-key-file FILE    Private 0600 file; never put a key in command arguments.
                            Existing selected-environment configuration is reused.
+  --save-seller-key        Hidden input in an independent terminal; refuses overwrite.
   --environment prod|dev   Seller credential environment (default: prod).
   --user USER --home PATH  Override the detected Hermes account/home.
   --hermes-bin PATH        Existing Hermes executable, if not discoverable.
@@ -57,7 +69,7 @@ OPENANY_HAS_PATH=0
 OPENANY_STATUS=0
 for OPENANY_ARGUMENT in "$@"; do
     case "$OPENANY_ARGUMENT" in
-        --check|--dry-run) OPENANY_CHECK=1 ;;
+        --check|--dry-run|--save-seller-key) OPENANY_CHECK=1 ;;
         --home|--home=*) OPENANY_HAS_HOME=1 ;;
         --hermes-bin|--hermes-bin=*) OPENANY_HAS_BIN=1 ;;
         --user-path|--user-path=*) OPENANY_HAS_PATH=1 ;;
@@ -99,9 +111,13 @@ fi
 OPENANY_BUNDLE_POINTER=/var/lib/openany-hermes/setup/current-bundle
 if [[ "$OPENANY_STATUS" == 1 && $EUID -eq 0 && -f "$OPENANY_BUNDLE_POINTER" && ! -L "$OPENANY_BUNDLE_POINTER" && -O "$OPENANY_BUNDLE_POINTER" ]]; then
     IFS= read -r OPENANY_INSTALLED_BUNDLE < "$OPENANY_BUNDLE_POINTER"
-    if [[ "$OPENANY_INSTALLED_BUNDLE" == /opt/openany-hermes-onboarding/0.3.1-* && -f "$OPENANY_INSTALLED_BUNDLE/scripts/setup.py" ]]; then
+    if [[ "$OPENANY_INSTALLED_BUNDLE" == /opt/openany-hermes-onboarding/"$OPENANY_SETUP_VERSION"-* && -f "$OPENANY_INSTALLED_BUNDLE/scripts/setup.py" ]]; then
         exec /usr/bin/python3 -B "$OPENANY_INSTALLED_BUNDLE/scripts/setup.py" "$@"
     fi
+fi
+if [[ "$OPENANY_SETUP_STATE" == draft ]]; then
+    echo 'Unpublished local draft: use install.sh from the extracted local ZIP beside its scripts/ directory. No released bundle was downloaded.' >&2
+    exit 1
 fi
 
 OPENANY_TEMP=$(mktemp -d /tmp/openany-hermes-setup.XXXXXXXX)

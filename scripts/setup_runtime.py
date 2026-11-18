@@ -17,6 +17,7 @@ import https_proxy
 import setup_user
 import cli_delivery
 import nginx_shared
+import prerequisites
 
 
 def read_secret(path, uid):
@@ -39,7 +40,9 @@ def identity(username=None, home=None):
     if any(char in str(home) for char in ("\n", "\r", "\x00")):
         raise common.Failure("Hermes home cannot contain control characters.")
     if home.is_symlink() or not home.is_dir() or home.stat().st_uid != user.pw_uid:
-        raise common.Failure("Existing Hermes home was not found or belongs to another account. This installer does not install Hermes itself.")
+        if not home.exists():
+            raise prerequisites.hermes_required()
+        raise common.Failure("Existing Hermes home belongs to another account or is not a supported directory. Confirm --user and --home; it will not be initialized or replaced.")
     return {"username": user.pw_name, "uid": user.pw_uid, "gid": user.pw_gid, "login_home": user.pw_dir, "home": str(home)}
 
 
@@ -102,7 +105,7 @@ class Runtime:
             code = "import shutil; from pathlib import Path; p=shutil.which('hermes'); print(p or next((str(x) for x in (Path.home()/'.local/bin/hermes',Path.home()/'.hermes/bin/hermes',Path.home()/'hermes/hermes-agent/.venv/bin/hermes') if x.is_file()),''))"
             candidate = self.as_user(["/usr/bin/python3", "-c", code]).stdout.strip()
         if not candidate or not Path(candidate).is_absolute():
-            raise common.Failure("Hermes executable was not detected. Install Hermes separately or provide --hermes-bin; no Hermes installation was attempted.")
+            raise prerequisites.hermes_required()
         self.as_user([candidate, "--version"])
         self.hermes = candidate
         return candidate
@@ -123,7 +126,12 @@ binary=Path(node).parent if node else None
 cli=sys.argv[1] or (str(Path(sys.argv[3])) if Path(sys.argv[3]).is_file() else shutil.which(sys.argv[2]))
 if not cli and binary and (binary/sys.argv[2]).is_file(): cli=str(binary/sys.argv[2])
 npm=str(binary/'npm') if binary and (binary/'npm').is_file() else shutil.which('npm')
-print(json.dumps({name:str(Path(value).resolve()) if value else None for name,value in {'node':node,'npm':npm,'cli':cli}.items()}))
+found={name:str(Path(value).resolve()) if value else None for name,value in {'node':node,'npm':npm,'cli':cli}.items()}
+if found['cli']:
+    try: metadata=json.loads((Path(found['cli']).parents[1]/'package.json').read_text())
+    except (OSError,ValueError): metadata={}
+    found.update(package_name=metadata.get('name'),package_version=metadata.get('version'))
+print(json.dumps(found))
 """
         result = self.as_user(['/usr/bin/python3', '-c', code, self.cfg.get('cli_bin') or '', command, str(private_cli), self.cfg.get('node_bin') or ''])
         try:
@@ -135,6 +143,7 @@ print(json.dumps({name:str(Path(value).resolve()) if value else None for name,va
         node_version = self.as_user([found['node'], '--version']).stdout.strip()
         cli_delivery.validate_node(node_version)
         if found.get('cli'):
+            cli_delivery.validate_package(self.cfg['environment'], found.get('package_name'), found.get('package_version'))
             help_text = self.as_user([found['node'], found['cli'], '--help']).stdout
             cli_delivery.validate_help(self.cfg['environment'], help_text, node_version)
         elif not found.get('npm'):
@@ -143,11 +152,22 @@ print(json.dumps({name:str(Path(value).resolve()) if value else None for name,va
         return self.cli
 
     def inspect_site(self):
-        self.command(['nginx', '-t'])
-        sources = nginx_shared.read_sources(self.command(['nginx', '-T']).stdout)
+        try:
+            self.command(['nginx', '-t'])
+            sources = nginx_shared.read_sources(self.command(['nginx', '-T']).stdout)
+        except common.Failure:
+            raise prerequisites.https_required() from None
         selected = nginx_shared.select_site(sources, self.cfg.get('domain'), self.cfg.get('nginx_site'))
         self.selected_site = selected
         return selected
+
+    def verify_existing_tls(self):
+        https_proxy.verify_tls(self.cfg['domain'])
+
+    def inspect_new_site(self):
+        if shutil.which('nginx'):
+            self.command(['nginx', '-t'])
+            https_proxy.check_conflicts(self.command(['nginx', '-T']).stdout, self.cfg['domain'], https_proxy.Paths().site(self.cfg['domain']))
 
     def preflight(self):
         https_proxy.check_os()

@@ -1,403 +1,208 @@
-# Publish your Hermes endpoint over HTTPS
+# Hermes one-click production connection guide
 
-For the current one-command integration, use the [README](README.md): it reuses your existing domain and certificate, runs the published CLI collector and supplies fixed `/openany/v1/runs` URLs. This page documents the optional manual **direct native API** profile; it does not configure automatic CLI file delivery. Do not apply its new-site HTTPS step to an existing Dashboard site.
+<!-- Generated from the template and the release manifest. Do not edit the generated file. -->
 
-This guide is for a provider who already runs Hermes on an Ubuntu/Debian VPS and wants OpenAny to call its native API. It includes **enabling API Server, configuring its access key, keeping Gateway running, and configuring HTTPS**.
+**v0.3.2 · production only · async / http_json / poll · public /openany/v1/**
 
-Toolkit version **0.3.1**. Follow this sequence: **save API settings → synchronize the private key file → start/restart Gateway once → verify locally → configure HTTPS → verify from a second host**. Do not continue past a failed check.
+Published installer v0.3.2. Verify the production manifest against the official stable release before setup.
 
-The result is:
+Give this guide to the Agent managing your server. The OpenAny installer configures an **existing Hermes**: API enablement, private credentials, a production CLI relay and HTTPS routing. It does not install or upgrade Hermes. Use the preparation path below if Hermes is absent. Keep the copied instruction short; follow all detailed steps here.
+
+## Copy this instruction to your Agent
 
 ```text
-OpenAny → https://hermes.example.com → Nginx → http://127.0.0.1:8642
-Your computer → SSH → your VPS (administration only)
+Read https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.3.2/GUIDE.en.md.
+
+Follow its production poll-mode guide to connect my existing Hermes to OpenAny, including API, Seller Key and HTTPS setup. Reuse existing configuration and keep credentials private. Guide me through missing prerequisites, confirm necessary changes with me, then complete and verify the approved setup.
+
+Complete connection setup only. Ask before publishing or running paid tasks. Stop if the guide cannot be read.
 ```
 
-Replace `hermes.example.com`, `203.0.113.10`, `ops@example.com`, and account/path placeholders with your own values. These example addresses are not a running service.
+## 1. Verify the release and prepare the server
 
-## 1. Prepare your VPS and domain
+Use one production source: this guide and [its release manifest](https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.3.2/hermes-release.json). Before a published installation, compare the manifest with the [official stable release](https://github.com/openanysi/hermes-https-onboarding/releases/latest); stop if the manifest is missing, the version differs or verification is unavailable. Resolve the version once, then lock its installer, ZIP and SHA-256. Never use a development page's manifest with a different production guide, or infer CLI/platform compatibility from a version number alone.
 
-You need an existing Hermes installation with a working model provider, Python 3.9 or newer, sudo access, and a domain you control. This release uses systemd, Nginx's standard `conf.d` layout, and distribution-packaged Certbot with `certbot.timer`. Local-computer commands below assume a macOS/Linux terminal, or a suitably configured Linux environment such as WSL on Windows.
+This guide pins **v0.3.2**, recorded **2026-11-18**. Use matching versioned package assets and the published manifest. Publishing the installer does not deploy the OpenAny website; website updates and real server acceptance are separate steps.
 
-Create an A record pointing your hostname to the VPS's public IPv4 address. If you publish AAAA records, every IPv6 address must reach the same server. Remove stale records. Supply every intended A/AAAA address to the tool with repeated `--public-ip` arguments. DNS must resolve directly to those addresses; CDN proxy mode is outside this guide.
+Inspect Ubuntu/Debian with systemd, available memory/disk, actual Linux account, absolute Hermes home/Profile, Gateway unit, model configuration, Node.js 22+, Nginx and DNS. Confirm the necessary changes and checks once, including backups and possible interruption; reuse existing approval and valid settings. Do not initiate business execution or paid tests under connection setup.
 
-In your cloud security group and host firewall, allow inbound TCP 80 and 443. Keep your existing SSH access working. Hermes port 8642 should remain bound to loopback. The toolkit does not modify DNS, SSH or firewall rules.
+### If Hermes is missing
 
-Port 80 is needed for Let's Encrypt HTTP-01 validation and subsequent renewals. If your provider blocks it, use a separately configured DNS-01 solution instead of this installer.
-
-## 2. Connect and upload the toolkit
-
-Use your existing SSH connection. An optional entry in your local `~/.ssh/config` is:
-
-```sshconfig
-Host hermes-provider
-    HostName YOUR_SERVER_IP
-    User YOUR_HERMES_LINUX_USER
-    IdentityFile ~/.ssh/YOUR_EXISTING_PRIVATE_KEY
-    IdentitiesOnly yes
-```
-
-Use the account that owns the Hermes installation. Verify the server's host-key fingerprint through your hosting console on the first connection; do not disable SSH host-key checking. If you already use another login method, keep using it.
-
-Get the ZIP and matching `.sha256` file from the [official GitHub release](https://github.com/openanysi/hermes-https-onboarding/releases/latest). In the local download directory, verify it on Linux with `sha256sum -c openany-hermes-https-onboarding-v0.2.0.zip.sha256`, or on macOS with `shasum -a 256 -c openany-hermes-https-onboarding-v0.2.0.zip.sha256`. Then unpack with `unzip openany-hermes-https-onboarding-v0.2.0.zip`. The toolkit directory is `hermes-https-onboarding`. You can also clone the source as shown in the README. Upload that directory from your computer:
+Explain the missing prerequisite and link the [official Nous installation guide](https://hermes-agent.nousresearch.com/docs/getting-started/installation). Obtain approval before installing Hermes separately as its intended account. For a headless VPS, the official source installer supports:
 
 ```bash
-scp -r hermes-https-onboarding hermes-provider:~/
-ssh hermes-provider
-cd ~/hermes-https-onboarding
-python3 --version
+curl --fail --location --silent --show-error \
+  https://hermes-agent.nousresearch.com/install.sh --output nous-install.sh
+bash nous-install.sh --non-interactive --skip-browser --skip-computer-use
 ```
 
-If Python or the listener inspection tool is missing, install them on the VPS:
+Wait for the installer’s final exit status and read its installation log. If SSH becomes unresponsive or memory is exhausted, recover and inspect the original job rather than launching another build. A generated launcher is not installation acceptance. Verify the actual wrapper, normally `~/.local/bin/hermes`, with `hermes --version` and `hermes doctor` as its owner. Use `hermes model` to configure the model privately: non-interactive installation skips interactive setup. Distinguish valid model configuration from an actual paid inference test, which needs separate authorization.
+
+Confirm the intended Gateway state. Inspect `hermes gateway --help` and existing units before creating a missing service. For root-owned Hermes the system-service path is `hermes gateway install --system --run-as-user root`; for a normal account use its user-service installation. The OpenAny installer detects the matching service, creates one only when absent, binds selected credentials, restarts only when needed and verifies authenticated API discovery. Do not reinstall or reset an existing Hermes/Profile.
+
+Hermes must support native Runs, capability/Skill discovery and durable Runs idempotency. An incompatible older version needs a separately approved upgrade. Missing Node.js or CLI prerequisites must be resolved within the approved scope, not by switching OpenAny environments.
+
+### If Hermes already exists
+
+Reuse the executable, model configuration, account and home. Keep `--user` and `--home` identical in preflight, setup and status. Direct root login requires `--user root` for root-owned Hermes; named Profiles use their actual directory. Preserve a custom API port with `--port` in preflight and setup.
+
+The installer enables the API automatically: it reuses `API_SERVER_KEY`, or generates it privately **only when absent**, and saves `HERMES_HOME/openany-api.key`. Preserve the model-provider key. Inspect `config.yaml` and `.env` together: YAML host/port overrides may win. Align explicit API overrides with `127.0.0.1` and the selected port under the approved plan, preserving unrelated settings. If YAML alone holds an API key, reconcile that same literal key privately into `.env`; if sources conflict, stop and resolve the intended key rather than rotating it or guessing.
+
+## 2. Obtain or reuse the production Seller Key
+
+The Hermes API Key authenticates calls to your service. The OpenAny Seller Key authorizes file uploads for this seller's platform tasks. Neither is a model-provider key or buyer API key. This installer requires a production Seller Key even for text-only shared connections.
+
+If it is missing, **guide the owner through these steps instead of merely reporting an error**:
+
+1. Open [production Settings → Seller key](https://openany.si/seller-console/settings#seller-key), sign in and select the intended seller. Generate only when none exists. An existing masked key cannot be recovered from the page: recover its private copy first. Do not rotate an existing key automatically or create another seller to bypass missing access.
+2. From an independent SSH terminal **as the Hermes account**, save the token with hidden input. Replace the sample account, home and private absolute path:
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y python3 iproute2
+bash install.sh --save-seller-key --user YOUR_HERMES_USER --home /absolute/path/to/hermes-home --environment prod --seller-key-file /absolute/private/seller.key
 ```
 
-Use a supported distribution whose Python version meets the minimum. OpenAny does not need your server password, private SSH key or cloud-console credentials. After each new SSH login, return to `~/hermes-https-onboarding` before running a `scripts/...` command.
+3. Give the Agent only the resulting file path and resume with `--seller-key-file`. The new file is token-only with mode `0600` in a private `0700` directory. The command refuses overwrite, does not initialize API/HTTPS, and does not remotely validate the key. With no TTY, it returns the same next steps; it must not ask for the secret in chat.
 
-## 3. Enable Hermes API Server and configure its key
+Reuse saved production credentials when available; omit `--seller-key-file` if the installer can read its existing configuration. Never copy credentials into chat, command arguments, fixed fields or logs, and never print the entire `.env`. Key rotation and updating other consumers require separate approval.
 
-**API Server runs inside Hermes Gateway.** There is no separate `APIService` daemon to install. Saving its configuration does not start the HTTP listener; Gateway must subsequently load that configuration.
+## 3. Choose exactly one HTTPS branch
 
-### 3.1 Configure through the Dashboard (illustrated)
-
-The screenshots below show Hermes **v0.23.1** and were supplied as configuration examples. Labels can differ between versions. The highlighted controls are the ones to use; the displayed connection state describes the example installation, not yours.
-
-**Open your Dashboard.** Use its existing administration URL if you already have access. Otherwise, start it on the VPS under the same account and Hermes home, only if a Dashboard is not already running:
+Prepare the version-locked installer and verify its checksum before running it:
 
 ```bash
-HERMES_HOME="$HOME/.hermes" hermes dashboard --host 127.0.0.1 --port 9119 --no-open
+curl --fail --location --silent --show-error \
+  'https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.3.2/install.sh' \
+  --output install.sh
+printf '%s  install.sh\n' '42b560359fcd7b629f4309f3d99f72f7e38d7e6b6140ebdb9585349c83142de2' | sha256sum --check -
 ```
 
-Keep that process running in **terminal A**. In a separate **terminal B on your computer**, forward the local administration port using your existing SSH connection:
+The default is **reuse**. DNS resolution does not prove HTTPS readiness. Inspect the actual certificate, loaded Nginx site, TLS handshake and external access; do not infer readiness from a running Nginx process or a configuration file.
+
+### A. Reuse an existing valid HTTPS site
+
+Use this branch only when its certificate and TLS listener work. The installer preserves the certificate and Dashboard, adding `/openany/` routes beside them. No additional domain, public-IP argument or certificate email is needed.
 
 ```bash
-ssh -o ExitOnForwardFailure=yes -N -L 127.0.0.1:19119:127.0.0.1:9119 hermes-provider
-```
-
-Open [http://127.0.0.1:19119](http://127.0.0.1:19119) in your computer's browser and sign in if prompted. This is an administration tunnel; it does not replace the public HTTPS API configured later. The Dashboard and the API listener are different ports. See the [official Dashboard guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/web-dashboard) for version-specific startup options.
-
-Both A and B are occupied by their foreground processes. Open **terminal C on your computer** for the remaining VPS commands:
-
-```bash
-ssh hermes-provider
-cd ~/hermes-https-onboarding
-```
-
-Keep A and B running while you use the browser. If the tunnel reports that its local port is occupied, resolve that conflict before entering credentials. If your Dashboard has a profile selector, select **default**, corresponding to this guide's `$HOME/.hermes`; do not save to a named profile and then configure the default home with the script. For a separate isolated home, use its actual path throughout and confirm the Dashboard manages that same home.
-
-**Step A — Find the API server channel.** Click **CHANNELS** in the left sidebar, locate the **API server** row, and click **CONFIGURE**. The toggle should ultimately be on; if it is already on, do not click it off.
-
-![Hermes Channels page: open Channels, locate API server, and use its enable toggle and Configure button](assets/hermes-channels-api-server.png)
-
-*Figure 1. The supplied arrows identify Channels, the API server toggle, and Configure. The top-right Restart Gateway button is used after saving.*
-
-[Open Figure 1 at full size](assets/hermes-channels-api-server.png)
-
-**Step B — Fill in the API settings.** In **CONFIGURE API SERVER**, use the following values:
-
-| Dashboard field | Value for this guide | Configuration variable |
-| --- | --- | --- |
-| **ENABLE API SERVER (TRUE/FALSE)**, marked **1** | `true` | `API_SERVER_ENABLED` |
-| **API SERVER AUTH KEY**, marked **2** | Your existing Hermes Bearer key, or a newly generated strong unique key | `API_SERVER_KEY` |
-| **API SERVER PORT** | `8642` | `API_SERVER_PORT` |
-| **API SERVER HOST** | `127.0.0.1` | `API_SERVER_HOST` |
-| **API SERVER MODEL NAME** | Keep the existing/default alias unless you intentionally need another | `API_SERVER_MODEL_NAME` |
-
-![Hermes API server settings dialog: field 1 enables the API, field 2 stores its masked Bearer key, and Save and Enable saves the channel](assets/hermes-api-server-settings.png)
-
-*Figure 2. Set the enable field to true and configure the private auth key. Use the explicit port and host values in the table; the screenshot's redacted port/host placeholders are not configuration values.*
-
-[Open Figure 2 at full size](assets/hermes-api-server-settings.png)
-
-Keep an existing auth key instead of rotating it during onboarding. Password dots and `<redacted: ***>` are display placeholders, not credentials to copy. For a new key, the simplest route is to let the toolkit generate and save one using section 3.2 first; the Dashboard can then display it masked without you retyping it. If using a password manager, generate a random token of at least **32 characters using letters, digits, hyphen and underscore**. The toolkit accepts existing literal tokens of 16–512 characters using letters, digits or `._~+/=-`; shorter keys, obvious placeholders and other characters are rejected without automatically replacing the existing credential. Retain the actual value in your private credential store for OpenAny; a model-provider key or Dashboard login password is not the Hermes API key.
-
-**Step C — Save and prepare the private key file.** Click **SAVE & ENABLE**. Dashboard configuration alone does not create this toolkit's `openany-api.key`. In your VPS terminal, run the following as the same Hermes user, without sudo:
-
-```bash
-python3 -B scripts/openany_hermes.py api-config --home "$HOME/.hermes" --require-existing-key --apply
-```
-
-Confirm the save succeeded before running this command. It reads that same home's saved `.env`, preserves its valid literal auth key, and writes the private key file used by the later checks. It also changes a known block-style API `enabled: false` setting in `config.yaml` to `true`, because an explicit YAML disable can prevent the API starting even when `.env` has API settings. Original files are backed up together. If you used the toolkit first, it reuses the existing key. Always use that same home and key.
-
-Expected command output is `"ok": true`, `"mode": "apply"`, `"key_action": "reuse"`, and a `key_file` path in the selected home. `--require-existing-key` stops if the Dashboard key was not saved to that home; it does not silently generate a different key. Correct the save/profile/home and rerun. An error or unexpected home is not a completed setup.
-
-**Step D — Restart and test.** After the save and key-file synchronization, use **RESTART GATEWAY** when existing tasks can be interrupted safely. Return to Channels and use **Test** on the API server row. The intended visible state is **Connected** with Gateway **Running**. If the Dashboard cannot restart a system service, use its authorized management method in section 4 instead of installing another service.
-
-The Dashboard's Test/Connected state is a runtime indication. Continue with the authenticated check in section 5 and the external HTTPS check in section 7; it does not establish public reachability or successful task delivery.
-
-### 3.2 Alternative: configure with the toolkit
-
-If you completed the Dashboard route above, this configuration step is already done. Continue to the service information in section 4 and verification in section 5. If Gateway is already restarted and the check succeeds, no additional restart is needed.
-
-Run the following as the Hermes Linux account, **without sudo**. For the default installation the configuration directory is `~/.hermes`. If you use a different isolated Hermes home, supply its actual path consistently. This release does not configure a multiplexed `/p/<profile>/...` endpoint.
-
-Preview first:
-
-```bash
-python3 -B scripts/openany_hermes.py api-config --home "$HOME/.hermes"
-```
-
-Apply:
-
-```bash
-python3 -B scripts/openany_hermes.py api-config --home "$HOME/.hermes" --apply
-```
-
-The tool updates these four assignments in `~/.hermes/.env`, preserving your existing model-provider configuration:
-
-```dotenv
-API_SERVER_ENABLED=true
-API_SERVER_HOST=127.0.0.1
-API_SERVER_PORT=8642
-API_SERVER_KEY=<YOUR_PRIVATE_HERMES_ACCESS_KEY>
-```
-
-The block above describes the settings; do not copy the placeholder as a real key. The tool generates a random key if none is configured, or preserves the valid literal key already present in `.env`. It removes duplicate managed assignments and writes `.env` and `~/.hermes/openany-api.key` with mode `0600`. If an API platform is explicitly disabled in an ordinary block-style YAML section (`platforms.api_server`, `gateway.platforms.api_server`, or `gateway.api_server`), it changes only that section's disabled flag to `true` and backs up `config.yaml` in the same transaction. Unrelated YAML values are preserved. Backups are saved under the private `~/.hermes/.openany-backups/` directory. The JSON output contains file locations, not the secret. YAML flow mappings, anchors and merges affecting these sections require normalization through Dashboard Save & Enable before this toolkit can proceed.
-
-If your key is already configured only in `config.yaml`, the tool stops instead of silently replacing it. Open the files in a private editor, put the **same existing key** in `API_SERVER_KEY` in this home's `.env`, then rerun. Interpolated key expressions also require manual resolution. Environment overrides normally supply connection settings, but explicit YAML platform disablement is a separate gate; the synchronization above handles ordinary disabled flags. Check service-level environment overrides if the running API still does not use the saved settings.
-
-For a manual setup, edit these four settings in the correct Hermes home's `.env`, use a strong unique Bearer key, and set `chmod 600 ~/.hermes/.env`. The automated path additionally writes the private standalone key file needed by its verification commands.
-
-The three credential types have different purposes:
-
-| Credential | Purpose |
-| --- | --- |
-| Model-provider API key | Hermes calling its configured language model |
-| Hermes `API_SERVER_KEY` | OpenAny authenticating to your Hermes endpoint |
-| Buyer's OpenAny API key | A buyer authenticating to OpenAny |
-
-Do not substitute one for another. The Hermes key authorizes agent execution and should be stored in OpenAny's private upstream-credential field, never in a public product description or example.
-
-## 4. Start Gateway and keep it running
-
-First inspect the existing service, using the same Linux account and Hermes home as above:
-
-```bash
-HERMES_HOME="$HOME/.hermes" hermes gateway status
-```
-
-**If you already restarted Gateway after the final synchronization in section 3.1**, inspect its status and proceed to section 5. Do not restart it a second time merely to follow this section. **Otherwise, if Gateway is already managed as a service**, restart that existing service so it loads the API configuration:
-
-```bash
-HERMES_HOME="$HOME/.hermes" hermes gateway restart
-HERMES_HOME="$HOME/.hermes" hermes gateway status
-```
-
-For a system-scoped installation, use the system service's documented management commands and required sudo privileges. Do not create a second user service alongside it. If using `systemctl` directly, confirm the unit belongs to this Hermes home; the default unit is usually `hermes-gateway`, while custom homes can have different names. Restarting an active Gateway can interrupt in-flight tasks, so choose an appropriate maintenance window.
-
-**If no service exists**, the following user-service setup provides persistence and starts at boot with lingering enabled:
-
-```bash
-HERMES_HOME="$HOME/.hermes" hermes gateway install
-sudo loginctl enable-linger "$(id -un)"
-HERMES_HOME="$HOME/.hermes" hermes gateway start
-HERMES_HOME="$HOME/.hermes" hermes gateway status
-loginctl show-user "$(id -un)" -p Linger
-```
-
-Expected: Gateway is running and `Linger=yes`. This is an explicit installation step, not something the API configuration tool performs automatically. If `hermes` is not found, activate your existing Hermes installation or use its full executable path before installing the service.
-
-For a temporary foreground diagnostic, use `HERMES_HOME="$HOME/.hermes" hermes gateway` only when no Gateway is already serving that home. A foreground process alone does not provide boot persistence.
-
-## 5. Verify the local API before configuring HTTPS
-
-```bash
-python3 -B scripts/openany_hermes.py verify \
-  --base-url http://127.0.0.1:8642 \
-  --key-file "$HOME/.hermes/openany-api.key"
-```
-
-This makes only read-only discovery requests. It checks that unauthenticated requests are rejected, the saved key works, capabilities advertise run creation/status, and the Skill list has a supported structure. It supports both a legacy array and the current `{"object":"list","data":[...]}` Skill envelope.
-
-A successful result includes `"authenticated": true` and `"model_tasks_started": 0`. An empty Skill list is allowed for transport verification; install your intended Skill before listing a product. This check does not prove model execution or business settlement.
-
-For an unauthenticated diagnostic, this request should return HTTP 401 or 403:
-
-```bash
-curl -i http://127.0.0.1:8642/v1/skills
-```
-
-## 6. Configure Nginx, HTTPS and renewal
-
-Run a read-only system check with sudo so listening process names are visible:
-
-```bash
-sudo python3 -B scripts/openany_hermes.py check \
+bash install.sh --check \
+  --user YOUR_HERMES_USER \
+  --home /absolute/path/to/hermes-home \
   --domain hermes.example.com \
-  --public-ip 203.0.113.10 \
-  --key-file "$HOME/.hermes/openany-api.key"
+  --environment prod \
+  --seller-key-file /absolute/private/seller.key
 ```
 
-If Nginx/Certbot is not installed, the check reports missing dependencies. Preview the intended setup:
+After successful preflight and approval:
 
 ```bash
-sudo python3 -B scripts/openany_hermes.py https \
+bash install.sh \
+  --user YOUR_HERMES_USER \
+  --home /absolute/path/to/hermes-home \
   --domain hermes.example.com \
-  --public-ip 203.0.113.10 \
-  --email ops@example.com \
-  --key-file "$HOME/.hermes/openany-api.key" \
-  --install-deps
+  --environment prod \
+  --seller-key-file /absolute/private/seller.key
 ```
 
-Preview does not inspect or change the server; use `check` for actual read-only diagnostics. To apply, add `--apply`:
+When exactly one supported HTTPS site exists, `--domain` can be omitted. Use `--nginx-site` for ambiguity. Missing/invalid TLS returns instructions to restore the existing site or explicitly choose the new-site branch; it does not switch branches or delete site configuration automatically.
+
+### B. Create a new HTTPS site and certificate
+
+Use this branch when no usable HTTPS site exists and the owner has approved creating one. Replace the domain, every public IP and certificate email. A/AAAA records must match the supplied `--public-ip` values; repeat the argument for each address. Port 80 must be publicly reachable for HTTP-01; 443 must be reachable for HTTPS. The script does not change firewall or SSH settings.
 
 ```bash
-sudo python3 -B scripts/openany_hermes.py https \
+bash install.sh --check \
+  --user YOUR_HERMES_USER \
+  --home /absolute/path/to/hermes-home \
   --domain hermes.example.com \
-  --public-ip 203.0.113.10 \
-  --email ops@example.com \
-  --key-file "$HOME/.hermes/openany-api.key" \
-  --install-deps \
-  --apply
+  --environment prod \
+  --seller-key-file /absolute/private/seller.key \
+  --new-site \
+  --public-ip 192.0.2.10 \
+  --email ops@example.com
 ```
 
-Applying permits installation of missing distribution packages and agrees to the Let's Encrypt terms through Certbot using your contact email. It creates an isolated managed site, validates Nginx before reloading, issues a webroot certificate, enables `certbot.timer`, installs a successful-renewal reload hook, and verifies the resulting HTTPS endpoint. Existing overlapping sites or unmanaged target files cause an error rather than being overwritten.
-
-The managed files are:
-
-- `/etc/nginx/conf.d/openany-hermes-hermes.example.com.conf`
-- `/etc/letsencrypt/live/openany-hermes-hermes.example.com/` (Certbot-managed certificate lineage)
-- `/etc/letsencrypt/renewal-hooks/deploy/openany-hermes-hermes.example.com`
-- `/var/lib/openany-hermes/backups/` (private configuration snapshots)
-- `/var/lib/openany-hermes/acme/` (public ACME validation files)
-
-The proxy preserves the native request URI, JSON body, Bearer credential and idempotency header. SSE buffering and proxy retries are disabled. The initial route set permits `POST /v1/runs`, `GET /v1/runs/{id}`, `GET /v1/runs/{id}/events`, `GET /v1/capabilities`, `GET /v1/skills`, and `GET /v1/health`. Other routes, including the dashboard, session administration and Chat Completions, are not exposed by this profile. The request-body limit is 10 MiB and the upstream read timeout is 3,600 seconds.
-
-The setup does not enable CORS. Server-to-server OpenAny requests do not need browser CORS settings. If you need another API surface, review and explicitly extend the profile rather than exposing the entire Hermes listener.
-
-## 7. Verify from outside the VPS
-
-Run the same verification on a separate computer or OpenAny's authorized integration host. In a new terminal **on your computer, outside the VPS SSH session**, change to your locally unpacked toolkit directory. Transfer only the standalone key file using your existing SSH alias, then run:
+After successful preflight and approval:
 
 ```bash
-install -d -m 700 "$HOME/.config/openany-hermes"
-scp hermes-provider:.hermes/openany-api.key "$HOME/.config/openany-hermes/openany-api.key"
-chmod 600 "$HOME/.config/openany-hermes/openany-api.key"
+bash install.sh \
+  --user YOUR_HERMES_USER \
+  --home /absolute/path/to/hermes-home \
+  --domain hermes.example.com \
+  --environment prod \
+  --seller-key-file /absolute/private/seller.key \
+  --new-site \
+  --public-ip 192.0.2.10 \
+  --email ops@example.com
 ```
 
-The remote `.hermes` path assumes this guide's default home; substitute your actual isolated home if different. Do not transfer the entire `.env` file. Verify using this local file:
+The installer checks conflicting `server_name` definitions, installs missing Nginx/Certbot dependencies only during approved setup, obtains the certificate, configures renewal and adds the **same `/openany/v1/...` routes** as the reuse branch. Existing HTTP/TLS configuration for that hostname may require manual reconciliation; do not overwrite it or request another domain automatically. A failed certificate request is a failed setup, not a completed connection.
+
+### Shared options and preflight meaning
+
+`--check` verifies prerequisites without system changes, including a readable existing Seller Key and TLS readiness for reuse. It does not enable a missing API, obtain a certificate or prove remote key validity. Protected Nginx inspection may require authorized sudo.
+
+Shared connection setup does **not require `--skill`**. Omit it when preparing the connection; currently discovered installed Skills may be included in the configuration reference. Add `--skill YOUR_INSTALLED_SKILL` only when generating a reference for a specific product, and verify it exists. Repeat for multiple Skills; add `--files` for file products of that output type. These are references, not imports or published listings.
+
+Use `--node-bin` for a custom Node.js 22+ location. An existing CLI is reused only when its package name and version match the manifest's tested production poll release (currently openany-cli@0.3.12); a missing CLI is privately installed at that pinned version. Command names in help alone do not prove compatibility. An outdated or wrong-environment CLI stops preflight and needs an approved compatible installation or `--cli-bin`. Do not silently replace global software or use Dev credentials.
+
+## 4. Resume the job and verify completion
+
+The setup worker is an independent systemd job that can survive a Gateway restart. **queued only means submitted**, not complete. Save its exact job ID, status command and private result path. Replace `YOUR_SETUP_JOB_ID` below with the receipt's ID and keep the same account/home:
 
 ```bash
-python3 -B scripts/openany_hermes.py verify \
-  --base-url https://hermes.example.com \
-  --key-file "$HOME/.config/openany-hermes/openany-api.key"
+bash install.sh --user YOUR_HERMES_USER --home /absolute/path/to/hermes-home --status YOUR_SETUP_JOB_ID
 ```
 
-Verification checks the system trust store and hostname; it never disables TLS verification or follows redirects with your key. A successful check performed only on the VPS does not prove that OpenAny's network can reach it.
+Resume from those references after a disconnect; do not create another setup job because the chat stopped. Read the exact receipt for a queued/running job. On failure, inspect the specific stage and backups. From an independent SSH terminal, `--wait` may wait for completion. Do not declare success from an executable file, preflight or a saved secret file.
 
-In a private editor, read `openany-api.key` and paste its value into OpenAny's upstream credential field. The installer does not print the value. Do not upload your whole `.env` file or SSH private key.
+Wait for `completed`, then verify authenticated GET capability and Skill discovery on both the native loopback API and public `/openany/v1/...` endpoints. Unauthenticated discovery must return 401/403. Check public HTTPS from another host; a server-side probe does not establish external firewall access. Confirm the running Gateway and CLI loaded the intended credentials. These checks do not execute a Skill or prove model output, file upload or billing.
 
-If you later change the API auth key in the Dashboard, repeat **Save → api-config synchronization → Gateway restart → local verification**, securely update the local copied key and OpenAny's upstream credential, and verify HTTPS again. A previously copied key file does not automatically follow a later Dashboard edit.
+On repeat setup, valid configuration, API key, certificate, CLI unit, task/state directories and routes are reused. Healthy matching services skip restart or reconfiguration. Changed credentials, a first-time environment binding or failed health checks may require a restart. Keep unfinished tasks and stable snapshots; do not run multiple relays against one state directory.
 
-## 8. Configure OpenAny
-
-For the recommended CLI delivery setup, use the [README fixed-path table](README.md#read-the-result) and the generated `listing-reference.json`. The following table applies only to the optional direct native API profile described on this page:
+## 5. Use the production poll connection
 
 | Setting | Value |
 | --- | --- |
-| Upstream origin/base URL | `https://hermes.example.com` |
-| Upstream creation path | `/v1/runs` |
-| Method | `POST` |
-| Upstream authentication | `Authorization: Bearer <HERMES_API_SERVER_KEY>` |
-| Capability discovery | `https://hermes.example.com/v1/capabilities` |
-| Skill discovery | `https://hermes.example.com/v1/skills` |
-| Upstream task status | `https://hermes.example.com/v1/runs/{run_id}` |
+| Upstream base URL | `https://hermes.example.com` |
+| Upstream creation path | `/openany/v1/runs` |
+| Method / body | `POST / application/json` |
+| Authentication | `Authorization: Bearer <HERMES_API_KEY>` |
+| Capability discovery | `/openany/v1/capabilities` |
+| Skill discovery | `/openany/v1/skills` |
+| Upstream status path | `/openany/v1/runs/{run_id}` |
+| Execution / adapter / delivery | `async / http_json / poll` |
 
-Keep the base URL as the origin when configuring `/v1/runs` separately; do not accidentally produce `/v1/v1/runs`. OpenAny's Hermes async adapter must be available in the target environment. This toolkit configures connectivity; it does not install or deploy that adapter.
+Use the actual domain returned by the installer. Keep the connection base URL as the HTTPS origin and the creation path as `/openany/v1/runs`. The Nginx prefix is removed before forwarding to the local CLI. Root `/v1/...` addresses in older manual examples are native/legacy routes, not an interchangeable public setting; do not mix them with this generated contract.
 
-Multiple Skill products can share the same origin and upstream path, with their own product price and fixed request instructions. For example, when using an OpenAny form that supports `fixed_body`, the corresponding upstream body fragment is:
+The flow is `OpenAny → HTTPS /openany/v1/runs → production CLI → native Hermes`. OpenAny polls run status through the relay; for file tasks the CLI uploads to production `POST /v1/agent-api-tasks/{task_id}/artifacts`. Use **async / http_json / poll**. This guide does not configure a `/result` callback or request switching to callback mode.
+
+Use the private `HERMES_HOME/.openany-provider/listing-reference.json` for each requested installed Skill. Each product uses its own `fixed_body.instructions` and price, while sharing the connection/path. Preserve the platform's poll settings. Verify actual production support separately; a command in CLI help or a fixture test is not proof of platform acceptance.
+
+## 6. File output contract and acceptance boundary
+
+Text/JSON products use `{"format":"json"}`. File products add `--files` and use:
 
 ```json
 {
-  "instructions": "Use the installed space-xhs-title Skill for this task."
+  "format": "json",
+  "artifacts_required": true,
+  "artifact_delivery": "auto_cli"
 }
 ```
 
-Use the actual installed Skill name and your environment's supported adapter fields. `instructions` guides the agent; it is not a tool-access sandbox or a guarantee of Skill execution. Product configuration, actual task output, hosted-file delivery and billing need separate business validation.
+The Skill writes final files in its assigned task directory and declares them in `openany-artifacts.json`, for example `{"files":["report.pdf"]}`, or returns final absolute paths plus a nonempty summary. Hermes tools and the collector must share the filesystem and task path. The CLI collects, freezes and uploads; the model does not execute upload commands. Missing required files must not become a successful delivery. A `stored` receipt confirms receipt only, not buyer access, task success or settlement.
 
-## 9. Optional functional task test
+Report API reachability, relay status, HTTPS branch/path, process credential loading, versions, private file references, backups and unresolved prerequisites separately. Report **end-to-end file delivery untested** unless real execution, upload, buyer download and settlement were separately authorized and actually verified.
 
-This step may invoke your configured model and incur usage charges. It is not run by the installer. Replace the credential and install the named Skill before running it:
+Local fixture tests only: real certificate issuance, this server, real model execution, production Seller Key acceptance, buyer downloads and billing have not been verified.
 
-```bash
-curl --fail --silent --show-error \
-  'https://hermes.example.com/v1/runs' \
-  -H 'Authorization: Bearer <HERMES_API_SERVER_KEY>' \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: <UNIQUE_PER_LOGICAL_TASK>' \
-  --data '{"input":"Write three titles for a commuting breakfast post.","instructions":"Use the installed space-xhs-title Skill for this task."}'
-```
+Complete connection setup only. Ask before publishing or running paid tasks. Stop if the guide cannot be read.
 
-Use the returned `run_id` for status:
+The versioned package includes its README, advanced native API/Dashboard diagnostics and screenshots. Use those as diagnostics; they are not an additional setup sequence after this one-click workflow.
 
-```bash
-curl --fail --silent --show-error \
-  'https://hermes.example.com/v1/runs/<RUN_ID>' \
-  -H 'Authorization: Bearer <HERMES_API_SERVER_KEY>'
-```
+## Optional Dashboard reference screenshots
 
-Do not repeatedly submit a new run to obtain its result. Inspect terminal status and output; HTTP 200 on a status request alone does not prove successful execution. A direct Hermes test does not validate an OpenAny buyer charge.
+These images illustrate where API settings live; the installer enables them automatically. Do not repeat manual initialization after successful setup. Existing literal API keys are reused. Menu names may differ by Hermes version.
 
-## 10. Renewal and recovery
+![Channels API server](assets/hermes-channels-api-server.png)
 
-Inspect the renewal schedule and, when ready, explicitly test renewal against the CA's staging service:
-
-```bash
-sudo systemctl status certbot.timer
-sudo systemctl list-timers certbot.timer
-sudo certbot renew --cert-name openany-hermes-hermes.example.com --dry-run --run-deploy-hooks
-```
-
-An enabled timer is not proof that future renewal will succeed. Keep DNS and port 80 working. If a renewal succeeds but the deploy hook fails, inspect Nginx and reload it after correcting the error. Certbot hook errors require log review even when its overall exit status is zero.
-
-For HTTPS configuration recovery, use the `backup` path reported by setup. Preview first, then apply:
-
-```bash
-sudo python3 -B scripts/openany_hermes.py restore \
-  --domain hermes.example.com \
-  --backup /var/lib/openany-hermes/backups/<SNAPSHOT_ID>
-sudo python3 -B scripts/openany_hermes.py restore \
-  --domain hermes.example.com \
-  --backup /var/lib/openany-hermes/backups/<SNAPSHOT_ID> \
-  --apply
-```
-
-For API configuration recovery, run as the Hermes account with the API setup's own snapshot:
-
-```bash
-python3 -B scripts/openany_hermes.py restore \
-  --home "$HOME/.hermes" \
-  --backup "$HOME/.hermes/.openany-backups/<SNAPSHOT_ID>" \
-  --apply
-```
-
-Restart the matching Gateway after restoring its configuration. Restoring an old key also requires updating the corresponding OpenAny upstream credential. Newly installed packages, service enablement, registered CA accounts and issued certificates are not uninstalled/revoked by configuration rollback.
-
-## Troubleshooting
-
-| Symptom | Check |
-| --- | --- |
-| Port 8642 refuses connections | Correct Linux account/home, API switch, Gateway status, and logs |
-| Verification returns unauthorized | Correct Hermes access key, selected home/profile, and service environment overrides |
-| DNS mismatch | Every A/AAAA record, propagation, and CDN proxy mode |
-| Port 80/443 conflict | Existing Nginx/Apache/Caddy/container listeners; resolve explicitly |
-| Existing `server_name` conflict | Review the current site instead of creating a duplicate |
-| Certificate issuance fails | Public port 80, cloud security group, firewall, AAAA reachability, and `/var/log/letsencrypt/letsencrypt.log` |
-| HTTPS works locally but not externally | Cloud firewall, DNS from a second host, NAT routing and TLS chain |
-| `certbot.timer` missing | Install the distribution Certbot package or integrate your existing renewal mechanism manually; Snap/custom layouts are not handled automatically |
-| Skill count is zero | Install the intended Skill in the same Hermes home; connectivity checks alone do not install Skills |
-
-Keep your SSH session open when diagnosing configuration failures. Inspect `sudo nginx -t`, `sudo journalctl -u nginx`, and the journal for your actual Hermes service. Review logs privately before sharing them.
-
-## Official references
-
-- [Hermes API Server configuration and native endpoints](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server)
-- [Hermes Gateway service management](https://hermes-agent.nousresearch.com/docs/user-guide/messaging)
-- [Hermes Dashboard: startup and Channels controls](https://hermes-agent.nousresearch.com/docs/user-guide/features/web-dashboard)
-- [Current Hermes API Server source, including the Skill-list envelope](https://github.com/NousResearch/hermes-agent/blob/main/gateway/platforms/api_server.py)
-- [Nginx proxy module](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
-- [Certbot webroot, renewal and hooks](https://eff-certbot.readthedocs.io/en/stable/using.html)
-- [Let's Encrypt HTTP-01 validation](https://letsencrypt.org/docs/challenge-types/)
+![API server settings](assets/hermes-api-server-settings.png)

@@ -1,51 +1,30 @@
-"""Check that published CLI examples parse; never execute their operations."""
+"""Parse documented installer examples and check packaged screenshots; run no setup."""
 from pathlib import Path
-import re
-import shlex
-import sys
-
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-import openany_hermes
+import re, shlex, sys
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'scripts'))
 import setup
-
-count = 0
-image_count = 0
-installer_count = 0
-guides = [name for name in ("GUIDE.en.md", "GUIDE.zh-CN.md") if (ROOT / name).is_file()]
-assert "GUIDE.en.md" in guides
-for name in ("README.md", *guides):
-    text = (ROOT / name).read_text()
-    assert "API_SERVER" in text or name == "README.md"
-    commands = set()
-    for block in re.findall(r"```bash\n(.*?)```", text, re.S):
-        for line in block.replace("\\\n", " ").splitlines():
-            marker = "scripts/openany_hermes.py "
-            if marker not in line or "--help" in line:
-                words = shlex.split(line)
-                if words[:2] == ["bash", "install.sh"]:
-                    setup.parser().parse_args(words[2:])
-                    installer_count += 1
-                continue
-            args = shlex.split(line.split(marker, 1)[1])
-            parsed = openany_hermes.parser().parse_args(args)
-            commands.add(parsed.command)
-            count += 1
-    if name in guides:
-        assert commands == {"api-config", "check", "https", "verify", "restore"}, (name, commands)
-        images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text)
-        assert images, (name, "guide must include its illustrated Dashboard steps")
-        for image in images:
-            path = (ROOT / image).resolve()
-            assert path.is_relative_to(ROOT.resolve()) and path.is_file(), (name, image)
-            assert path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), (name, "image must be a valid PNG", image)
-            image_count += 1
-for name in guides:
-    text = (ROOT / name).read_text()
-    for required in ("API_SERVER_ENABLED", "API_SERVER_HOST", "API_SERVER_PORT", "API_SERVER_KEY", "hermes gateway restart", "hermes gateway install", "--key-file", "certbot renew", "fixed_body"):
-        assert required in text, (name, required)
-    assert "--require-existing-key --apply" in text, (name, "Dashboard sync must require its saved key")
-    assert "ExitOnForwardFailure=yes" in text and "127.0.0.1:19119:127.0.0.1:9119" in text, (name, "SSH tunnel must explicitly bind loopback and fail on conflicts")
-print("PASS:", count, "documented CLI examples parsed; API/service/key/renewal coverage present in", ", ".join(guides) + ". No operations executed.")
-print("PASS:", image_count, "local screenshot references resolve to packaged PNG files.")
-print("PASS:", installer_count, "one-command installer examples parsed without executing setup.")
+count=0
+images=0
+for name in ['README.md','GUIDE.en.md']:
+    text=(ROOT/name).read_text()
+    for block in re.findall(r'```bash\n(.*?)```',text,re.S):
+        for line in block.replace('\\\n',' ').splitlines():
+            words=shlex.split(line)
+            if words[:2]==['bash','install.sh']:
+                if words[2:]!=['--version']: setup.parser().parse_args(words[2:])
+                count+=1
+    for required in ['--save-seller-key','--seller-key-file','--new-site','--public-ip','--email','--user','--home','--skill','/openany/v1/runs','http_json / poll','0600','queued','official']:
+        assert required in text,(name,required)
+    assert 'http_json / callback' not in text,(name,'delivery mode drift')
+    if name=='GUIDE.en.md':
+        for required in ['API_SERVER_KEY','config.yaml','--port','fixed_body.instructions','/artifacts','hermes model','401/403']:
+            assert required in text,(name,required)
+        refs=re.findall(r'!\[[^\]]*\]\(([^)]+)\)',text)
+        assert refs,'Guide must include the Dashboard screenshots'
+        for ref in refs:
+            path=(ROOT/ref).resolve()
+            assert path.is_relative_to(ROOT.resolve()) and path.is_file()
+            assert path.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
+            images+=1
+print('PASS:',count,'installer examples parsed;',images,'screenshots checked; no operations executed.')

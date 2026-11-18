@@ -9,6 +9,6 @@ test_status_query_string_is_preserved (__main__.NginxIntegration.test_status_que
 test_tls_untrusted_certificate_is_rejected (__main__.NginxIntegration.test_tls_untrusted_certificate_is_rejected) ... ok
 
 ----------------------------------------------------------------------
-Ran 9 tests in 0.807s
+Ran 9 tests in 0.746s
 
 OK

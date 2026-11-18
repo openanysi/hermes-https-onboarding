@@ -1,3 +1,7 @@
 Local environment: Darwin arm64
 Python: 3.14.3
 nginx version: nginx/1.26.3
+Node.js: 22.22.0
+Published production CLI: 0.3.12
+Published Dev CLI: 0.1.5
+Package metadata checked: 2026-11-18

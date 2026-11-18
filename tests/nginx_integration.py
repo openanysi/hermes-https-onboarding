@@ -51,7 +51,7 @@ class Fixture(http.server.BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def record(self, body=b""):
-        self.seen.append({"path": self.path, "method": self.command, "auth": self.headers.get("Authorization"), "idempotency": self.headers.get("Idempotency-Key"), "session": self.headers.get("X-Hermes-Session-Key"), "content_type": self.headers.get("Content-Type"), "body": body})
+        self.seen.append({"task_id": self.headers.get("X-OpenAny-Task-Id"), "deadline": self.headers.get("X-OpenAny-Deadline"), "delivery": self.headers.get("X-OpenAny-Artifact-Delivery"), "path": self.path, "method": self.command, "auth": self.headers.get("Authorization"), "idempotency": self.headers.get("Idempotency-Key"), "session": self.headers.get("X-Hermes-Session-Key"), "content_type": self.headers.get("Content-Type"), "body": body})
 
     def do_GET(self):
         self.record()

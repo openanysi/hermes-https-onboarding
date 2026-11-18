@@ -66,6 +66,22 @@ class SetupTests(unittest.TestCase):
             path.chmod(0o600)
             self.assertEqual(runtime.read_secret(path, os.geteuid()), "fixture-seller-token")
 
+    def test_cli_probe_binds_selected_environment_and_requires_node22(self):
+        runtime = self.module("setup_runtime")
+        config = {"identity": {"username": "ubuntu", "uid": 1000, "gid": 1000, "home": "/home/ubuntu/.hermes", "login_home": "/home/ubuntu"}, "environment": "dev"}
+        with patch.dict(os.environ):
+            runner = runtime.Runtime(config, Path("/opt/bundle"), Path("/tmp/state"))
+            def as_user(args, *values, **kwargs):
+                if "-c" in args:
+                    value = json.dumps({"node": "/node/bin/node", "npm": "/node/npm.js", "cli": "/tools/openany-dev.js"})
+                elif args[-1] == "--version": value = "v22.22.0"
+                else: value = "https://api-dev.openany.si\nseller hermes serve\nseller tasks upload"
+                return SimpleNamespace(returncode=0, stdout=value)
+            runner.as_user = as_user
+            result = runner.discover_cli()
+            self.assertFalse(result["install_required"])
+            self.assertEqual(result["command"], "openany-dev")
+
     def test_worker_job_is_separate_from_gateway_scope(self):
         setup = self.module("setup")
         args = setup.systemd_job_command(Path("/opt/openany/bundle"), "a" * 24)
@@ -81,7 +97,7 @@ class SetupTests(unittest.TestCase):
         fake = FakeRuntime()
         events = []
         result = setup.run_steps(fake, lambda stage, state: events.append((stage, state)))
-        self.assertEqual(fake.calls, ["preflight", "gateway", "configure", "bind", "runtime_ready", "restart", "wait_api", "record_runtime", "https_ready", "https", "verify_https"])
+        self.assertEqual(fake.calls, ["preflight", "gateway", "configure", "bind", "runtime_ready", "restart", "wait_api", "record_runtime", "delivery", "https_ready", "https", "verify_https", "listing"])
         self.assertEqual(result["base_url"], "https://fixture.example.com")
         self.assertEqual(result["seller_key"]["remote_verified"], False)
         self.assertIn(("gateway", "restarted"), events)
@@ -107,11 +123,43 @@ class SetupTests(unittest.TestCase):
             setup.run_steps(fake, lambda *args: None)
         self.assertNotIn("https", fake.calls)
 
+    def test_cli_delivery_failure_stops_before_https(self):
+        setup = self.module("setup")
+        common = importlib.import_module("common")
+        fake = FakeRuntime()
+        def failure(): raise common.Failure("fixture collector failed")
+        fake.prepare_delivery = failure
+        with self.assertRaises(common.Failure): setup.run_steps(fake, lambda *args: None)
+        self.assertNotIn("https", fake.calls)
+
+    def test_readonly_existing_site_check_needs_no_new_dns_or_email(self):
+        setup = self.module("setup")
+        with tempfile.TemporaryDirectory() as tmp:
+            user = {"username":"fixture", "uid":os.geteuid(), "gid":os.getegid(), "home":tmp, "login_home":tmp}
+            fake = SimpleNamespace(hermes="/tools/hermes",cli={"command":"openany-dev","install_required":False})
+            fake.discover_hermes = lambda: None
+            fake.discover_cli = lambda: None
+            fake.inspect_site = lambda: {"domain":"existing.example.com", "path":"/etc/nginx/site.conf", "sha256":"fixture"}
+            args = setup.parser().parse_args(["--check", "--environment", "dev"])
+            with patch.object(setup.https_proxy,"check_os"), patch.object(setup.setup_runtime,"identity",return_value=user), patch.object(setup.setup_runtime,"Runtime",return_value=fake):
+                result = setup.queue(args)
+            self.assertEqual(result["runs_url"],"https://existing.example.com/openany/v1/runs")
+            self.assertFalse(result["system_changes"])
+            self.assertEqual(list(Path(tmp).iterdir()),[])
+
     def test_cli_accepts_seller_key_path_but_not_plaintext_key(self):
         setup = self.module("setup")
         args = setup.parser().parse_args(["--domain", "fixture.example.com", "--public-ip", "192.0.2.1", "--email", "ops@example.com", "--seller-key-file", "/private/seller", "--environment", "dev"])
         self.assertEqual(args.environment, "dev")
         self.assertFalse(hasattr(args, "seller_key"))
+
+    def test_existing_site_cli_options_need_no_new_certificate_inputs(self):
+        setup = self.module("setup")
+        args = setup.parser().parse_args(["--domain", "existing.example.com", "--environment", "dev", "--skill", "space-xhs-title", "--cli-bin", "/tools/openany-dev", "--nginx-site", "/etc/nginx/sites-available/hermes"])
+        self.assertFalse(args.new_site)
+        self.assertEqual(args.skills, ["space-xhs-title"])
+        self.assertFalse(args.public_ip)
+        self.assertIsNone(args.email)
 
     def test_bootstrap_help_is_available_without_system_changes(self):
         self.assertTrue((ROOT / "install.sh").is_file())
@@ -256,6 +304,8 @@ class FakeRuntime:
     def restart_gateway(self): self.calls.append("restart")
     def wait_api(self): self.calls.append("wait_api")
     def record_runtime(self): self.calls.append("record_runtime")
+    def prepare_delivery(self): self.calls.append("delivery"); return {"unit": "fixture-cli.service"}
+    def listing_reference(self): self.calls.append("listing"); return {"upstream_path": "/openany/v1/runs"}
     def https_ready(self): self.calls.append("https_ready"); return self.ready
     def configure_https(self): self.calls.append("https")
     def verify_https(self): self.calls.append("verify_https"); return {"base_url": "https://fixture.example.com", "authenticated": True}

@@ -1,0 +1,9 @@
+test_prefixed_discovery_uses_bearer_and_not_inherited_dashboard_auth (__main__.SharedNginxIntegration.test_prefixed_discovery_uses_bearer_and_not_inherited_dashboard_auth) ... ok
+test_prefixed_status_and_missing_key (__main__.SharedNginxIntegration.test_prefixed_status_and_missing_key) ... ok
+test_same_domain_dashboard_is_preserved (__main__.SharedNginxIntegration.test_same_domain_dashboard_is_preserved) ... ok
+test_task_headers_body_and_path_reach_cli_unchanged (__main__.SharedNginxIntegration.test_task_headers_body_and_path_reach_cli_unchanged) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.596s
+
+OK

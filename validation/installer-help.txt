@@ -1,10 +1,19 @@
 OpenAny one-click setup for an existing Hermes on Ubuntu/Debian.
-Hermes itself is not installed. Existing valid stages are verified and skipped.
+Hermes itself is not installed. Existing HTTPS domain and certificate are reused.
+Node.js 22+ is required; the environment-specific CLI is reused or installed privately.
 
-bash install.sh --domain hermes.example.com --public-ip YOUR_PUBLIC_IP \
-  --email YOU@example.com --environment prod --seller-key-file /private/seller.key
+bash install.sh --domain YOUR_EXISTING_HERMES_DOMAIN \
+  --environment prod --seller-key-file /private/seller.key --skill YOUR_SKILL
 
 Options:
+  --domain DOMAIN         Existing HTTPS hostname; auto-selected if exactly one exists.
+  --nginx-site FILE       Select an existing loaded Nginx site when ambiguous.
+  --cli-bin FILE          Existing openany/openany-dev executable; otherwise auto-detect.
+  --node-bin FILE         Existing Node.js 22+ executable, if not discoverable.
+  --skill SKILL           Generate a listing reference; repeat for multiple Skills.
+  --files                 Generate auto_cli file contracts; default is JSON-only.
+  --relay-port PORT       Private CLI port (prod 8790, Dev 8791).
+  --new-site              Only for a new site; requires domain, public-ip and email.
   --seller-key-file FILE    Private 0600 file; never put a key in command arguments.
                            Existing selected-environment configuration is reused.
   --environment prod|dev   Seller credential environment (default: prod).

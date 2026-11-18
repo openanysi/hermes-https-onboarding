@@ -1,3 +1,3 @@
 PASS: 11 documented CLI examples parsed; API/service/key/renewal coverage present in GUIDE.en.md. No operations executed.
 PASS: 2 local screenshot references resolve to packaged PNG files.
-PASS: 2 one-command installer examples parsed without executing setup.
+PASS: 3 one-command installer examples parsed without executing setup.

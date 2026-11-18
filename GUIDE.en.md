@@ -1,10 +1,10 @@
 # Publish your Hermes endpoint over HTTPS
 
-For one-command setup including the OpenAny Seller Key and an independent background job, use the [README](README.md). This page is the advanced manual API/TLS reference.
+For the current one-command integration, use the [README](README.md): it reuses your existing domain and certificate, runs the published CLI collector and supplies fixed `/openany/v1/runs` URLs. This page documents the optional manual **direct native API** profile; it does not configure automatic CLI file delivery. Do not apply its new-site HTTPS step to an existing Dashboard site.
 
 This guide is for a provider who already runs Hermes on an Ubuntu/Debian VPS and wants OpenAny to call its native API. It includes **enabling API Server, configuring its access key, keeping Gateway running, and configuring HTTPS**.
 
-Toolkit version **0.2.0**. Follow this sequence: **save API settings → synchronize the private key file → start/restart Gateway once → verify locally → configure HTTPS → verify from a second host**. Do not continue past a failed check.
+Toolkit version **0.3.0**. Follow this sequence: **save API settings → synchronize the private key file → start/restart Gateway once → verify locally → configure HTTPS → verify from a second host**. Do not continue past a failed check.
 
 The result is:
 
@@ -294,7 +294,7 @@ If you later change the API auth key in the Dashboard, repeat **Save → api-con
 
 ## 8. Configure OpenAny
 
-Use these values in the Hermes-compatible provider setup available in your OpenAny environment:
+For the recommended CLI delivery setup, use the [README fixed-path table](README.md#read-the-result) and the generated `listing-reference.json`. The following table applies only to the optional direct native API profile described on this page:
 
 | Setting | Value |
 | --- | --- |

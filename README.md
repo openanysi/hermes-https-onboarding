@@ -1,72 +1,95 @@
-# OpenAny Hermes HTTPS — one-command setup
+# Connect an existing Hermes to OpenAny
 
-Version **0.2.0** · Ubuntu/Debian · existing Hermes required
+**v0.3.0** · Ubuntu/Debian VPS · Hermes already installed · Node.js 22+
 
-Configure native Hermes API access, its private key, the OpenAny Seller Key, Nginx HTTPS and certificate renewal with one installer. Existing valid configuration is verified and skipped. Hermes itself is never installed.
+One installer enables the native API, configures the Hermes API Key and OpenAny Seller Key, runs the published OpenAny CLI's automatic file collector, and reuses your existing HTTPS domain and certificate. It adds `/openany/` routes beside your Dashboard. **You do not need another domain.**
 
-## Run
-
-Download [install.sh](https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.2.0/install.sh), then run it on the VPS as the Hermes account:
+## Run on your Hermes VPS
 
 ```bash
 curl --fail --location --silent --show-error \
-  'https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.2.0/install.sh' \
+  'https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.3.0/install.sh' \
   --output install.sh
 bash install.sh \
   --domain hermes.example.com \
-  --public-ip 203.0.113.10 \
-  --email ops@example.com \
   --environment prod \
-  --seller-key-file /absolute/private/seller.key
+  --seller-key-file /absolute/private/seller.key \
+  --skill space-xhs-title
 ```
 
-Replace the example domain, IP, email and path. Use `--environment dev` for a Dev Seller Key. Include every intended A/AAAA address using repeated `--public-ip`. DNS and cloud firewall rules must already allow the domain and ports 80/443.
+Replace the domain with your **existing** HTTPS hostname and the file path with your private Seller Key file (mode `0600`, token only). Use `--environment dev` for Dev. If exactly one supported HTTPS site exists, `--domain` can be omitted. No new DNS record, public-IP argument or certificate email is needed when reusing a site.
 
-The Seller Key file must contain only the real token and have mode `0600`. The installer can reuse its private selected-environment configuration or an existing selected Seller Key in the Hermes home's `.env`; omit `--seller-key-file` in that case. From an interactive SSH terminal, missing credentials can be entered at a hidden prompt. From Hermes, provide a private file or existing configuration; never paste a key into chat or a command argument.
+Run as the Hermes Linux account. The installer uses `sudo -n`; from an authorized SSH terminal, use `sudo bash install.sh --user YOUR_HERMES_USER ...` if interactive elevation is required. From Hermes, supply private credential files or existing configuration; never paste keys into chat or command arguments. SSH users can omit the file to use a hidden credential prompt. Previously saved selected-environment credentials are reused.
 
-Root privileges are required for Nginx/systemd. The script uses `sudo -n`; if it is unavailable, run the same command with `sudo` from an authorized SSH session. A direct root invocation needs `--user YOUR_HERMES_USER`. Custom homes/executables can be provided with `--home` and `--hermes-bin`. The one-command worker requires the distribution `/usr/bin/python3` to be version 3.9 or later.
+Use `--node-bin /absolute/path/to/node` for an existing Node.js 22+ executable outside the normal search path; standard nvm installations are detected. Missing Node.js is reported before API/HTTPS changes. An available supported CLI is reused; if missing, the installer privately installs `openany-cli@0.3.12` (production) or `openany-cli-dev@0.1.5` (Dev) using npm. It does not replace your globally installed CLI or install/upgrade Hermes.
 
-## Check the result
+## Read the result
 
 ```bash
 bash install.sh --status
 ```
 
-Setup runs in an independent systemd service, outside Gateway's process group. It can restart the matching Gateway and continue even if the initiating Hermes session disconnects. The initial `queued` response is a receipt, not completion. The installer prints an exact status command and private result-file path; `--status` reports `completed` or `failed`. From SSH you may add `--wait` to the setup command. Use `--check` for a preflight without system configuration changes.
+The setup job runs in an independent systemd service so it can continue when Gateway restarts. `queued` means submitted, not completed. Use the exact status command or private result file returned by the installer. From SSH you may add `--wait`; `--check` performs preflight without changing system configuration. A non-root preflight may need sudo to inspect protected Nginx configuration files.
 
-The result includes the HTTPS origin, `/v1/runs`, discovery addresses, private credential locations, backups, and external-verification status. No model task, file upload or buyer billing test is started automatically.
+On success, your fixed addresses are:
 
-## Credentials
+| Setting | Value for the example domain |
+| --- | --- |
+| OpenAny upstream connection base URL | `https://hermes.example.com` |
+| Upstream creation path | `/openany/v1/runs` |
+| Method / body | `POST` / `application/json` |
+| Authentication | Bearer, private Hermes API Key |
+| Capability discovery | `https://hermes.example.com/openany/v1/capabilities` |
+| Skill discovery | `https://hermes.example.com/openany/v1/skills` |
+| Upstream status path | `/openany/v1/runs/{run_id}` |
+| Execution / delivery | `async` / `http_json` / `poll` |
 
-- Hermes `API_SERVER_KEY`: reused or generated, stored in `HERMES_HOME/openany-api.key`.
-- OpenAny Seller Key: supplied by OpenAny, never generated here. Production uses `OPENANY_SELLER_KEY`; Dev uses `OPENANY_DEV_SELLER_KEY`.
-- The selected Seller Key and `OPENANY_TASK_ROOT` are stored in `HERMES_HOME/.openany-provider/prod.env` or `dev.env`, mode `0600`, and loaded by the selected Gateway through a managed `EnvironmentFile` drop-in. The worker checks the selected service's loaded process environment without printing it.
+Keep the upstream connection base URL as the origin; configure `/openany/v1/runs` in the existing **upstream path** field. The public `/openany/` prefix is removed by Nginx before forwarding to the CLI. Multiple Skill products share this connection and path, use different `fixed_body.instructions` values, and keep their own OpenAny prices. The installer writes a private `.openany-provider/listing-reference.json` with the values for the requested installed Skills. It does not submit or publish products.
 
-These keys are distinct from model-provider keys and buyer API keys. Seller credential loading is checked locally; its remote validity, automatic file delivery and settlement are not claimed or tested by this installer. Existing OpenAny upload/callback tooling still needs to be available for those business features.
+## Automatic file products
 
-## Downloads and details
+The current supported mode remains **polling plus CLI file upload**. This installer does not convert native tasks into callback tasks or call `/result` for them. Production and Dev upload origins are fixed by their respective CLI packages, not entered by the provider.
 
-- [Latest release](https://github.com/openanysi/hermes-https-onboarding/releases/latest)
-- [v0.2.0 ZIP](https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.2.0/openany-hermes-https-onboarding-v0.2.0.zip)
-- [ZIP SHA-256](https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.2.0/openany-hermes-https-onboarding-v0.2.0.zip.sha256)
-- [Advanced manual guide with screenshots](GUIDE.en.md)
-- [Validation evidence and limitations](VALIDATION.md)
-
-The standalone installer downloads and verifies its fixed release ZIP; the ZIP can also be unpacked and its bundled `install.sh` run locally. You can obtain the source directly:
-
-```bash
-git clone https://github.com/openanysi/hermes-https-onboarding.git
-cd hermes-https-onboarding
-```
-
-User configuration is applied as the Hermes Linux account. System changes are limited to the selected Gateway, managed Nginx site, certificate tooling and required dependencies. Unknown/ambiguous services and conflicting sites cause an error rather than takeover. Existing plain user/system units named `hermes-gateway*.service` are detected by their pinned home; unmanaged listeners and complex service layouts require manual integration. The selected Gateway is enabled at boot; user services also have lingering enabled so they keep running after logout. Gateway restarts can interrupt in-flight work; the separate installer continues and records progress.
-
-This is local-tested software, not a real VPS acceptance result. Actual systemd execution/restart survival, public certificate issuance/renewal and OpenAny's external reachability still need provider-side acceptance. The script does not change SSH, DNS, cloud firewall rules, model-provider settings or product prices.
-
-## Tests
+For a file-producing Skill, add `--files` to generate its listing reference, for example:
 
 ```bash
-python3 -B -m unittest discover -s tests -v
-python3 -B tests/check_docs.py
-NGINX_BINARY=/absolute/path/to/nginx python3 -B tests/nginx_integration.py
+bash install.sh \
+  --domain hermes.example.com \
+  --environment prod \
+  --skill pdf \
+  --files
 ```
+
+This example reuses saved private credentials. The `pdf` Skill must already be installed. Repeat `--skill` for multiple products of the same output type. JSON-only products such as `space-xhs-title` use the default contract `{"format":"json"}`. File products use this **output contract** in the existing OpenAny form:
+
+```json
+{
+  "format": "json",
+  "artifacts_required": true,
+  "artifact_delivery": "auto_cli"
+}
+```
+
+For each product, copy its generated `fixed_body` into the existing fixed-body field. Keep the poll settings generated by OpenAny; the current native adapter recognizes the prefixed Runs path. The installer does not change frontend, backend, gateway or CLI business code.
+
+The CLI appends the actual private task directory to Hermes instructions. The Skill generates its final files there and writes `openany-artifacts.json`, for example `{"files":["report.pdf"]}`, or lists final absolute paths in plain text. The model does not run upload commands. Hermes tools and the collector must use the same host/filesystem; remote sandboxes require the same task-directory mount.
+
+The collector uses durable task mapping, immutable file snapshots, receipt validation and bounded retries. Missing required files do not become successfully uploaded. `stored` confirms artifact receipt; OpenAny's existing poll/settlement flow decides task success and charging. Buyers continue using the returned `status_url` and authenticated artifact downloads. No real task or charge is started by setup.
+
+## Existing sites, credentials and recovery
+
+- HTTPS reuse is the default. Dashboard routes and certificate files are retained. Only managed `/openany/` routing is inserted or updated. Dashboard Basic/SSO subrequest authentication is disabled only inside this API location, whose upstream requires the Hermes Bearer key.
+- `--nginx-site /etc/nginx/sites-available/hermes` selects a loaded site when ambiguous. Site symlinks are resolved to their actual file. Conflicting API locations, server-wide redirects/rewrites or ambiguous sites stop with a diagnosis; they do not trigger a request for a new domain.
+- The installer backs up changed files, validates Nginx before reload, verifies authenticated discovery and restores the previous site on failure. The result reports private backup paths. Existing TLS renewal remains under its current manager; no certificate is replaced in reuse mode.
+- Only when intentionally creating a new HTTPS site, pass `--new-site --domain ... --public-ip ... --email ...`. This uses the advanced Certbot flow. DNS, inbound ports 80/443, SSH, and cloud firewall rules remain operator-managed.
+- `API_SERVER_KEY` is reused or generated and saved in `HERMES_HOME/openany-api.key`. Production Seller Key uses `OPENANY_SELLER_KEY`; Dev uses `OPENANY_DEV_SELLER_KEY`. These are distinct from model keys and buyer keys.
+- Private CLI environment, task and state files live under `HERMES_HOME/.openany-provider/`. The relay runs as the Hermes user, with a managed user systemd unit. The selected user manager is enabled to survive logout/reboot. Default private ports: native API `8642`, production CLI `8790`, Dev CLI `8791`.
+- One Hermes home is bound to one delivery environment. The installer refuses silent cross-environment migration. Use isolated homes or reconcile existing tasks first. Reuse the same immutable task context when recovering uncertain work; never resubmit a paid task merely to test recovery.
+
+Private backup manifests identify the saved files for operator recovery. The advanced `restore` command covers its direct native API/TLS profile; shared-site and CLI-unit backups require reviewing and restoring their reported files. A full uninstall additionally requires stopping the reported CLI user unit and removing only its managed routing; restoring files does not uninstall packages, undo service enablement or revoke certificates.
+
+## Downloads and evidence
+
+[Release and ZIP](https://github.com/openanysi/hermes-https-onboarding/releases/tag/v0.3.0) · [Advanced API/Dashboard guide with screenshots](GUIDE.en.md) · [Validation report](VALIDATION.md)
+
+Local tests cover real Nginx and installed published CLI code with loopback Hermes/platform fixtures. Real VPS systemd lifecycle, public TLS renewal, actual Hermes tool execution, OpenAny external reachability, remote Seller Key validity, hosted buyer downloads and actual settlement still require a provider-side acceptance test. No such deployment or paid test was performed for this release.

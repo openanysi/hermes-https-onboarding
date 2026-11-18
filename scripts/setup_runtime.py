@@ -15,6 +15,8 @@ import time
 import common
 import https_proxy
 import setup_user
+import cli_delivery
+import nginx_shared
 
 
 def read_secret(path, uid):
@@ -105,10 +107,60 @@ class Runtime:
         self.hermes = candidate
         return candidate
 
+    def discover_cli(self):
+        package, version, command, origin = cli_delivery.PACKAGES[self.cfg['environment']]
+        private_cli = self.home / '.openany-provider/tools' / self.cfg['environment'] / 'node_modules' / package / 'bin/openany.js'
+        code = """import json,shutil,sys,re
+from pathlib import Path
+node=sys.argv[4] or shutil.which('node')
+if not node:
+    candidates=[]
+    for p in (Path.home()/'.nvm/versions/node').glob('v*/bin/node'):
+        m=re.fullmatch(r'v(\\d+)\\.(\\d+)\\.(\\d+)',p.parents[1].name)
+        if m and int(m[1])>=22: candidates.append((tuple(map(int,m.groups())),str(p)))
+    node=max(candidates)[1] if candidates else None
+binary=Path(node).parent if node else None
+cli=sys.argv[1] or (str(Path(sys.argv[3])) if Path(sys.argv[3]).is_file() else shutil.which(sys.argv[2]))
+if not cli and binary and (binary/sys.argv[2]).is_file(): cli=str(binary/sys.argv[2])
+npm=str(binary/'npm') if binary and (binary/'npm').is_file() else shutil.which('npm')
+print(json.dumps({name:str(Path(value).resolve()) if value else None for name,value in {'node':node,'npm':npm,'cli':cli}.items()}))
+"""
+        result = self.as_user(['/usr/bin/python3', '-c', code, self.cfg.get('cli_bin') or '', command, str(private_cli), self.cfg.get('node_bin') or ''])
+        try:
+            found = json.loads(result.stdout)
+        except ValueError:
+            raise common.Failure('Cannot discover Node.js and the selected OpenAny CLI.') from None
+        if not found.get('node'):
+            raise common.Failure('Node.js 22+ is required for CLI automatic delivery. Install it for the Hermes user and rerun; no API/HTTPS configuration has been changed.')
+        node_version = self.as_user([found['node'], '--version']).stdout.strip()
+        cli_delivery.validate_node(node_version)
+        if found.get('cli'):
+            help_text = self.as_user([found['node'], found['cli'], '--help']).stdout
+            cli_delivery.validate_help(self.cfg['environment'], help_text, node_version)
+        elif not found.get('npm'):
+            raise common.Failure('The selected CLI is missing and npm is unavailable; install ' + package + '@' + version + ' for the Hermes account.')
+        self.cli = {**found, 'command': command, 'package': package, 'version': version, 'install_required': not bool(found.get('cli')), 'node_version': node_version}
+        return self.cli
+
+    def inspect_site(self):
+        self.command(['nginx', '-t'])
+        sources = nginx_shared.read_sources(self.command(['nginx', '-T']).stdout)
+        selected = nginx_shared.select_site(sources, self.cfg.get('domain'), self.cfg.get('nginx_site'))
+        self.selected_site = selected
+        return selected
+
     def preflight(self):
         https_proxy.check_os()
-        self.addresses = https_proxy.check_dns(self.cfg["domain"], self.cfg["public_ips"])
+        setup_user.check_environment(self.home, self.cfg['environment'])
+        if self.cfg.get('new_site'):
+            self.addresses = https_proxy.check_dns(self.cfg["domain"], self.cfg["public_ips"])
+        else:
+            selected = self.inspect_site()
+            if self.cfg.get('site_sha256') and self.cfg['site_sha256'] != selected['sha256']:
+                raise common.Failure('Existing HTTPS site changed after setup was queued; rerun to inspect it again.')
+            self.addresses = set()
         self.discover_hermes()
+        self.discover_cli()
         if not shutil.which("ss"):
             self.command(["apt-get", "update"])
             self.command(["apt-get", "install", "-y", "iproute2"])
@@ -251,23 +303,79 @@ class Runtime:
     def record_runtime(self):
         self.helper("marker", {"fingerprint": self.fingerprint})
 
+    def prepare_delivery(self):
+        key = common.read_key(self.user_config['api_key_file'])
+        native = 'http://127.0.0.1:' + str(self.cfg['port'])
+        status, caps = common.request_json(native, '/v1/capabilities', key)
+        if status != 200: raise common.Failure('Native API is unavailable for automatic delivery.')
+        self.retention_seconds = cli_delivery.check_capabilities(caps)
+        if self.cli['install_required']:
+            prefix = self.home / '.openany-provider/tools' / self.cfg['environment']
+            self.as_user([self.cli['node'], self.cli['npm'], 'install', '--prefix', str(prefix), '--registry', 'https://registry.npmjs.org', '--ignore-scripts', '--no-audit', '--no-fund', self.cli['package'] + '@' + self.cli['version']])
+            self.discover_cli()
+            if self.cli['install_required']: raise common.Failure('The pinned CLI installation did not provide its expected executable.')
+        self.command(['loginctl', 'enable-linger', self.user['username']])
+        self.command(['systemctl', 'start', 'user@' + str(self.user['uid']) + '.service'])
+        result = self.helper('delivery', {'relay_port': self.cfg['relay_port'], 'node_bin': self.cli['node'], 'cli_bin': self.cli['cli']})
+        unit = result['unit']
+        active = self.control('user', ['is-active', '--quiet', unit], True).returncode == 0
+        listeners = self.command(['ss', '-H', '-ltnp']).stdout
+        occupied = any(len(row.split()) >= 5 and row.split()[3].rsplit(':', 1)[-1] == str(self.cfg['relay_port']) for row in listeners.splitlines())
+        if occupied and not active:
+            raise common.Failure('The private CLI relay port belongs to an unknown process; select --relay-port or review the existing listener.')
+        if result['changed']: self.control('user', ['daemon-reload'])
+        if self.control('user', ['is-enabled', '--quiet', unit], True).returncode:
+            self.control('user', ['enable', unit])
+        expected = setup_user.read_environment(Path(result['environment_file']))
+        def loaded():
+            value = self.control('user', ['show', unit, '--property=MainPID', '--value'], True)
+            pid = value.stdout.strip()
+            if value.returncode or not pid.isdigit() or int(pid) < 1: return False
+            try: return process_credentials_match((Path('/proc') / pid / 'environ').read_bytes(), expected)
+            except OSError: return False
+        if result['changed'] or not active or not loaded():
+            self.control('user', ['restart', unit])
+        relay = 'http://127.0.0.1:' + str(self.cfg['relay_port'])
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            try:
+                common.verify_api(relay, key)
+                if loaded():
+                    self.delivery_config = result
+                    return {**result, 'cli': self.cli['command'], 'durable_runs_retention_seconds': self.retention_seconds, 'local_service_verified': True, 'file_upload_and_billing': 'not_tested'}
+            except common.Failure:
+                pass
+            time.sleep(2)
+        raise common.Failure('The CLI relay did not provide authenticated discovery with its selected credentials within 90 seconds.')
+
+    def listing_reference(self):
+        key = common.read_key(self.user_config['api_key_file'])
+        status, items = common.request_json('http://127.0.0.1:' + str(self.cfg['port']), '/v1/skills', key)
+        if isinstance(items, dict): items = items.get('data')
+        if status != 200 or not isinstance(items, list): raise common.Failure('Cannot enumerate installed Skills for the listing reference.')
+        names = [item['name'] for item in items if isinstance(item, dict) and isinstance(item.get('name'), str)]
+        skills = self.cfg.get('skills') or names
+        if any(skill not in names for skill in skills): raise common.Failure('A requested Skill is not installed in the selected Hermes home; no product was created.')
+        return self.helper('listing', {'domain': self.cfg['domain'], 'skills': skills, 'files_required': self.cfg.get('files_required', False)})
+
     def https_ready(self):
-        paths = https_proxy.Paths()
         try:
-            ipv6 = any(":" in address for address in self.addresses)
-            if common.regular_file(paths.site(self.cfg["domain"])).read_text() != https_proxy.render_site(self.cfg["domain"], self.cfg["port"], True, ipv6):
+            selected = self.inspect_site()
+            if nginx_shared.patch_site(selected['text'], selected, self.cfg['relay_port']) != selected['text']:
                 return False
-            https_proxy.check_nginx(self.cfg["domain"], paths)
-            for args in (["is-active", "--quiet", "nginx"], ["is-active", "--quiet", "certbot.timer"], ["is-enabled", "--quiet", "certbot.timer"]):
-                if self.command(["systemctl", *args], allow_failure=True).returncode:
-                    return False
+            if self.command(['systemctl', 'is-active', '--quiet', 'nginx'], allow_failure=True).returncode: return False
             self.verify_https()
             return True
         except (common.Failure, OSError):
             return False
 
     def configure_https(self):
-        self.https_result = https_proxy.configure_proxy(self.cfg["domain"], self.cfg["port"], self.cfg["email"], self.cfg["public_ips"], Path(self.user_config["api_key_file"]), True, True)
+        certificate = None
+        if self.cfg.get('new_site'):
+            certificate = https_proxy.configure_proxy(self.cfg["domain"], self.cfg["port"], self.cfg["email"], self.cfg["public_ips"], Path(self.user_config["api_key_file"]), True, True)
+        selected = self.inspect_site()
+        self.https_result = nginx_shared.apply_site(selected, self.cfg['relay_port'], self.state_root / 'backups', lambda args: self.command(args).stdout, self.verify_https)
+        if certificate: self.https_result['certificate_setup'] = certificate
 
     def verify_https(self):
-        return common.verify_api("https://" + self.cfg["domain"], common.read_key(self.user_config["api_key_file"]))
+        return nginx_shared.verify_public(self.cfg['domain'], common.read_key(self.user_config['api_key_file']))

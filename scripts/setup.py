@@ -18,8 +18,9 @@ import hermes_api
 import https_proxy
 import setup_runtime
 import setup_user
+import cli_delivery
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 STATE = Path("/var/lib/openany-hermes/setup")
 
 
@@ -28,6 +29,13 @@ def parser():
     p.add_argument("--domain")
     p.add_argument("--public-ip", action="append", default=[])
     p.add_argument("--email")
+    p.add_argument("--new-site", action="store_true", help="Create a new HTTPS site; otherwise reuse an existing TLS site and certificate")
+    p.add_argument("--nginx-site", type=Path, help="Select an existing loaded Nginx site if discovery is ambiguous")
+    p.add_argument("--cli-bin", help="Existing environment-specific OpenAny CLI executable")
+    p.add_argument("--node-bin", help="Existing Node.js 22+ executable if not discoverable")
+    p.add_argument("--skill", action="append", dest="skills", default=[], help="Installed Skill for the generated listing reference; repeat for multiple Skills")
+    p.add_argument("--files", action="store_true", help="Generate mandatory auto_cli file-delivery contracts; omitted for JSON-only Skills")
+    p.add_argument("--relay-port", type=int, help="Private CLI port, default 8790 in prod or 8791 in Dev")
     p.add_argument("--environment", choices=("prod", "dev"), default="prod")
     p.add_argument("--seller-key-file", type=Path, help="Private file; never pass the key value in arguments")
     p.add_argument("--user")
@@ -61,6 +69,9 @@ def run_steps(runtime, progress):
         runtime.wait_api()
         runtime.record_runtime()
         progress("gateway", "restarted")
+    progress("cli_delivery", "configuring")
+    delivery = runtime.prepare_delivery()
+    progress("cli_delivery", "ready")
     if runtime.https_ready():
         progress("https", "skipped_verified")
     else:
@@ -68,7 +79,8 @@ def run_steps(runtime, progress):
         runtime.configure_https()
         progress("https", "configured")
     result = runtime.verify_https()
-    return {**result, "api_key_file": config["api_key_file"], "seller_key": {"configured": True, "remote_verified": False, "environment_file": config["seller_env_file"], "variable": config.get("seller_variable"), "environment": runtime.cfg["environment"] if hasattr(runtime, "cfg") else "prod"}, "backups": {"api": config.get("api", {}).get("backup"), "seller": config.get("seller_backup"), "gateway": getattr(runtime, "binding", {}).get("backup"), "https": getattr(runtime, "https_result", {}).get("backup")}, "external_verification": "required_from_another_host", "file_delivery_and_billing": "not_tested", "model_tasks_started": 0}
+    listing = runtime.listing_reference()
+    return {**result, "listing": listing, "delivery": delivery, "execution": {"adapter_type": "http_json", "delivery_mode": "poll", "artifact_delivery": "auto_cli"}, "api_key_file": config["api_key_file"], "seller_key": {"configured": True, "remote_verified": False, "environment_file": config["seller_env_file"], "variable": config.get("seller_variable"), "environment": runtime.cfg["environment"] if hasattr(runtime, "cfg") else "prod"}, "backups": {"api": config.get("api", {}).get("backup"), "seller": config.get("seller_backup"), "gateway": getattr(runtime, "binding", {}).get("backup"), "https": getattr(runtime, "https_result", {}).get("backup")}, "external_verification": "required_from_another_host", "file_delivery_and_billing": "not_tested", "model_tasks_started": 0}
 
 
 def systemd_job_command(bundle, job):
@@ -166,21 +178,33 @@ def queue(args):
     user = setup_runtime.identity(args.user, args.home)
     if args.status:
         return read_status(user, args.status, args.wait)
-    if not args.domain or not args.email or not args.public_ip:
-        raise common.Failure("Provide --domain, --public-ip and --email. Existing Hermes is required.")
-    domain, port = common.domain_name(args.domain), common.port_number(args.port)
-    if port in (80, 443) or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", args.email):
-        raise common.Failure("Use a non-public API port and a valid certificate contact email.")
+    setup_user.check_environment(user['home'], args.environment)
+    if args.new_site and (not args.domain or not args.email or not args.public_ip):
+        raise common.Failure("Only --new-site requires --domain, --public-ip and --email. The default reuses an existing HTTPS site.")
+    domain, port = common.domain_name(args.domain) if args.domain else None, common.port_number(args.port)
+    relay_port = common.port_number(args.relay_port or (8791 if args.environment == "dev" else 8790))
+    if port in (80, 443) or relay_port in (80, 443) or port == relay_port:
+        raise common.Failure("Use distinct non-public Hermes and CLI ports.")
+    if args.new_site and (not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", args.email) or args.email.startswith("-")):
+        raise common.Failure("Provide a valid certificate contact email.")
     if args.user_path and any(x in args.user_path for x in ("\n", "\x00")):
         raise common.Failure("Invalid user executable search path.")
-    config = {"identity": user, "domain": domain, "public_ips": args.public_ip, "email": args.email, "port": port, "environment": args.environment, "gateway_scope": args.gateway_scope, "hermes_bin": args.hermes_bin, "user_path": args.user_path}
+    config = {"identity": user, "domain": domain, "public_ips": args.public_ip, "email": args.email, "port": port, "relay_port": relay_port, "new_site": args.new_site, "nginx_site": str(args.nginx_site) if args.nginx_site else None, "cli_bin": args.cli_bin, "node_bin": args.node_bin, "skills": args.skills, "environment": args.environment, "gateway_scope": args.gateway_scope, "hermes_bin": args.hermes_bin, "user_path": args.user_path}
     runtime = setup_runtime.Runtime(config, Path(__file__).resolve().parents[1], STATE)
     runtime.discover_hermes()
-    https_proxy.check_dns(domain, args.public_ip)
+    runtime.discover_cli()
+    if args.new_site:
+        https_proxy.check_dns(domain, args.public_ip)
+    else:
+        selected = runtime.inspect_site()
+        config.update(domain=selected["domain"], nginx_site=selected["path"], site_sha256=selected["sha256"])
+        domain = selected["domain"]
+    config['files_required'] = args.files
+    cli_delivery.listing(domain, args.environment, args.skills, args.files)
     if args.check:
         if args.seller_key_file:
             setup_runtime.read_secret(args.seller_key_file, user["uid"])
-        return {"ok": True, "state": "checked", "hermes_home": user["home"], "hermes_user": user["username"], "hermes_executable": runtime.hermes, "environment": args.environment, "system_changes": False, "seller_key_required": "private file or existing selected-environment configuration", "seller_key_remote_verified": False}
+        return {"ok": True, "state": "checked", "hermes_home": user["home"], "hermes_user": user["username"], "hermes_executable": runtime.hermes, "environment": args.environment, "domain": domain, "runs_url": "https://" + domain + "/openany/v1/runs", "cli": runtime.cli, "system_changes": False, "seller_key_required": "private file or existing selected-environment configuration", "seller_key_remote_verified": False}
     if os.geteuid() != 0:
         raise common.Failure("Run the installer with sudo; user configuration will still run as the Hermes account.")
     key = seller_input(args, user)

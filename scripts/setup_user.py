@@ -32,8 +32,15 @@ def read_environment(path):
     return values
 
 
+def check_environment(home, environment):
+    marker = common.regular_file(Path(home) / '.openany-provider/delivery-environment')
+    if marker.exists() and marker.read_text().strip() != environment:
+        raise common.Failure('This Hermes home has delivery bound to another environment. Reconcile its tasks or use an isolated home before switching environments.')
+
+
 def configure(home, port, environment, seller_key):
     home = hermes_api.validate_home(home)
+    check_environment(home, environment)
     seller_key = validate_seller(seller_key)
     name = seller_variable(environment)
     private = common.private_directory(home / ".openany-provider")
@@ -80,7 +87,7 @@ def write_user_dropin(home, unit, environment):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("configure", "dropin", "progress", "marker"))
+    parser.add_argument("action", choices=("configure", "dropin", "progress", "marker", "delivery", "listing"))
     parser.add_argument("--home", type=Path, required=True)
     parser.add_argument("--environment", choices=("prod", "dev"), default="prod")
     parser.add_argument("--port", type=int, default=8642)
@@ -93,6 +100,15 @@ def main():
             result = configure(home, args.port, args.environment, payload.get("seller_key", ""))
         elif args.action == "dropin":
             result = write_user_dropin(home, args.unit or "", args.environment)
+        elif args.action == "delivery":
+            import cli_delivery
+            result = cli_delivery.configure(home, args.environment, args.port, payload["relay_port"], payload["node_bin"], payload["cli_bin"])
+        elif args.action == "listing":
+            import cli_delivery
+            reference = cli_delivery.listing(payload["domain"], args.environment, payload["skills"], payload.get("files_required", False))
+            path = common.private_directory(home / ".openany-provider") / "listing-reference.json"
+            common.atomic_write(path, json.dumps(reference, indent=2).encode())
+            result = {"path": str(path), "skill_count": len(reference["skills"]), "base_url": reference["base_url"], "upstream_path": reference["upstream_path"]}
         else:
             private = common.private_directory(home / ".openany-provider")
             if args.action == "marker":

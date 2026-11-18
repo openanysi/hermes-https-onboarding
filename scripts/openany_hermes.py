@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OpenAny Hermes HTTPS onboarding, version 0.3.0."""
+"""OpenAny Hermes HTTPS onboarding, version 0.3.1."""
 import argparse
 import json
 import os
@@ -21,7 +21,7 @@ def api_port(value):
 
 def parser():
     cli = argparse.ArgumentParser(description="Expose an existing Hermes API through HTTPS on Ubuntu/Debian. Preview by default; no model tasks are started.")
-    cli.add_argument("--version", action="version", version="OpenAny Hermes onboarding 0.3.0")
+    cli.add_argument("--version", action="version", version="OpenAny Hermes onboarding 0.3.1")
     sub = cli.add_subparsers(dest="command", required=True)
     api = sub.add_parser("api-config", help="Enable API Server and reuse/generate its private Bearer key (preview by default)")
     api.add_argument("--home", type=Path, required=True, help="Existing Hermes home, owned by the current account")

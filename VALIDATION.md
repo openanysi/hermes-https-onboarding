@@ -1,12 +1,21 @@
 # Local validation report
 
-Version **0.3.0** · 2026-11-18 · no provider-server deployment
+Version **0.3.1** · 2026-11-18 · regression and provider-side validation
+
+## v0.3.1 Linux systemd correction
+
+A provider-side installation exposed an error in the earlier `EnvironmentFile` rendering: surrounding quotes were treated as part of the pathname and systemd ignored the directive as non-absolute. The authenticated native API stayed healthy, while the installer correctly refused to proceed without loaded credentials. Both the Gateway drop-in and CLI unit now emit a literal absolute path, escaping percent specifiers without adding surrounding quotes. Timeout diagnostics distinguish missing credentials from API unavailability.
+
+A second real-host issue reproduced Nginx reload timing: the first public request still reached the old Dashboard route (302), while a request one second later reached the new CLI route (401 without credentials, 200 with credentials). Routing verification now retries a bounded number of read-only checks before committing or restoring the saved configuration; all original authentication checks remain required.
+
+Three real Linux `systemd-analyze verify` tests reproduce the old warning and accept the corrected Gateway and CLI units, including spaces, percent characters and UTF-8 paths. They create temporary unit files and do not register or start test services. Host warnings for unrelated installed units are excluded from each fixture's diagnostics. No OpenAny business code was changed.
 
 ## Results
 
 | Check | Result |
 | --- | --- |
-| Python unit / CLI regression suite | 75 passed |
+| Python unit / CLI regression suite | 77 passed |
+| Real Linux systemd parser regression | 3 passed |
 | Existing real Nginx integration | 9 passed |
 | New real shared-site Nginx integration | 4 passed |
 | Installed published production CLI 0.3.12 | 4 integration tests passed |
@@ -16,7 +25,7 @@ Version **0.3.0** · 2026-11-18 · no provider-server deployment
 | Bundled Dashboard screenshots | 2 local PNG references verified |
 | Bash / Python / JavaScript syntax | Checked locally |
 
-All tests use private temporary files and fixture credentials. Nginx binds only to loopback on unprivileged ports and uses a temporary self-signed certificate trusted only by the test process. No system Nginx files, public model endpoint, wallet or provider VPS is used.
+All tests use private temporary files and fixture credentials. Nginx binds only to loopback on unprivileged ports and uses a temporary self-signed certificate trusted only by the test process. The local suites do not use system Nginx files, public model endpoints or wallets. The separate provider-side parser and connectivity checks use the explicitly authorized VPS and do not execute a model task.
 
 ## What changed and what was exercised
 
@@ -35,6 +44,14 @@ The new CLI setup configures a separate user service and private environment-spe
 
 The upload destination is checked against each package's fixed production/Dev origin, then redirected **inside the test fixture's injected fetch** to a loopback server. Installed packages and deployed platform endpoints are not modified. Fixture download authorization is not evidence of OpenAny's real buyer-download authorization or OSS operation.
 
+## Authorized provider production connectivity acceptance
+
+On 2026-11-18 an explicitly authorized Ubuntu provider VPS completed production setup with Node.js 22.23.5 and published production CLI 0.3.12. The existing domain, certificate paths, Dashboard routes, API key and non-API environment assignments were preserved. Gateway and CLI process-environment checks confirmed credential loading; private environment files were mode 0600, the CLI user unit was active/enabled and user lingering was enabled.
+
+The final installer returned `completed`. A separate repeat also completed with unchanged Gateway, CLI and Dashboard PIDs. An external client validated the real certificate chain and hostname: valid credentials returned 200 for capabilities/Skills, missing/wrong credentials returned 401, an unauthenticated task POST was rejected, an unknown run query returned 404, and the API namespace did not expose Dashboard configuration. Existing Dashboard login still worked. No authenticated task-creation request was sent; no Skill execution, actual file upload, buyer artifact download, remote Seller Key validity check or billing/settlement was tested.
+
+These are connectivity/configuration results from one provider environment. They do not replace file-delivery or commercial acceptance, or prove behavior on every Linux distribution/custom proxy. No OpenAny frontend, backend, gateway or CLI business source was modified or deployed.
+
 ## Current compatibility contract
 
 - Published npm metadata and installed help were checked: `openany-cli@0.3.12` / `openany`, `openany-cli-dev@0.1.5` / `openany-dev`, Node.js >=22. The installer verifies selected-environment help/capabilities before using an existing CLI; missing packages install privately with fixed versions and lifecycle scripts disabled.
@@ -52,15 +69,16 @@ NGINX_BINARY=/absolute/path/to/nginx python3 -B tests/nginx_integration.py
 NGINX_BINARY=/absolute/path/to/nginx python3 -B tests/shared_nginx_integration.py
 node tests/cli_relay_integration.mjs /absolute/path/to/node_modules/openany-cli
 node tests/cli_relay_integration.mjs /absolute/path/to/node_modules/openany-cli-dev
+python3 -B tests/systemd_environment_integration.py
 ```
 
 The last four checks require permission to bind loopback sockets. The package contains no OpenAny CLI source or credentials. For the Node integration checks, install the corresponding published package normally and pass its package directory.
 
 ## Acceptance still required on a provider VPS
 
-Actual Linux systemd execution, official Gateway install/restart behavior, worker survival across a real restart, private npm installation and reboot recovery were not executed on the macOS test host. Their command/service/environment boundaries are exercised with unit fixtures. A real Hermes version must advertise durable Runs idempotency, and its tools must write to the same filesystem/task directory the collector reads.
+The macOS fixtures do not execute Linux services. The separate authorized VPS acceptance above covers real systemd setup, Gateway restart, an independent setup worker, private npm installation, service credential loading and repeat-run behavior. A full server reboot was not performed. A real Hermes version must advertise durable Runs idempotency, and its tools must write to the same filesystem/task directory the collector reads.
 
-Existing public DNS/TLS reachability, certificate renewal under the site's existing manager, the new-site live ACME flow, target OpenAny runtime support, Seller Key validity, real Skill file contents, hosted buyer download and actual debit/settlement require separate acceptance. Byte completeness does not prove business-content correctness. No paid call, actual balance change or VPS deployment was performed.
+Existing public DNS/TLS reachability, certificate renewal under the site's existing manager, the new-site live ACME flow, target OpenAny runtime support, Seller Key validity, real Skill file contents, hosted buyer download and actual debit/settlement require separate acceptance. Byte completeness does not prove business-content correctness. No paid call or actual balance change is part of setup or connectivity verification. Provider-side configuration and acceptance are recorded separately from the local fixture suites.
 
 Routing failures restore the selected site's saved bytes and attempt to reload the previous configuration. Backups do not uninstall npm/system packages, undo user lingering or service enablement, revoke certificates, reconcile active tasks or revert arbitrary operator edits. A CLI-service failure stops setup before routing changes, but previously enabled API/Gateway settings can remain; the private result and backups identify the stages to review. Nonstandard proxies, unsupported Nginx syntax, ambiguous routing or a mismatched delivery environment require operator review rather than automatic takeover.
 

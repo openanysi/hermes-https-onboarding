@@ -62,11 +62,17 @@ def configure(home, port, environment, seller_key):
     return {"api": api, "api_key_file": str(home / "openany-api.key"), "seller_env_file": str(env_file), "seller_changed": bool(changed), "seller_backup": str(tx.directory) if tx.directory else None, "task_root": str(task_root), "seller_variable": name, "seller_key_remote_verified": False}
 
 
-def dropin_text(env_file):
+def environment_file_line(env_file):
     value = str(env_file)
-    if any(char in value for char in ("\n", "\r", "\x00")):
+    if not Path(value).is_absolute() or any(ord(char) < 32 for char in value) or any(char in value for char in '*?[]'):
         raise common.Failure("Invalid environment file path.")
-    return '# Managed by OpenAny Hermes one-click setup\n[Service]\nEnvironmentFile=' + json.dumps(value.replace("%", "%%"), ensure_ascii=False) + "\n"
+    # Unlike ExecStart/Environment, systemd's EnvironmentFile parser consumes
+    # the entire literal path. Surrounding quotes become part of that path.
+    return 'EnvironmentFile=' + value.replace('%', '%%') + '\n'
+
+
+def dropin_text(env_file):
+    return '# Managed by OpenAny Hermes one-click setup\n[Service]\n' + environment_file_line(env_file)
 
 
 def write_user_dropin(home, unit, environment):

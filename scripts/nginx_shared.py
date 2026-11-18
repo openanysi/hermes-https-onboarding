@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 import re
 import shlex
+import time
 
 import common
 from common import Failure
@@ -192,6 +193,18 @@ def patch_site(text, selected, port):
     return text[:end] + ('\n' if text[:end] and not text[:end].endswith('\n') else '') + block + text[end:]
 
 
+def verify_after_reload(verifier):
+    # A successful reload request precedes activation of Nginx's new workers.
+    # Keep the original backup until the complete authenticated check succeeds.
+    for attempt in range(10):
+        try:
+            return verifier()
+        except Failure:
+            if attempt == 9:
+                raise
+            time.sleep(1)
+
+
 def apply_site(selected, port, backups, runner, verifier=None):
     path = common.regular_file(Path(selected['path']))
     original = path.read_text()
@@ -200,14 +213,14 @@ def apply_site(selected, port, backups, runner, verifier=None):
     desired = patch_site(original, selected, port).encode()
     if desired == original.encode():
         runner(['nginx','-t'])
-        if verifier: verifier()
+        if verifier: verify_after_reload(verifier)
         return {'changed': False, 'site': str(path), 'certificate': 'reused', 'backup': None}
     try:
         with common.Transaction(Path(backups)) as tx:
             tx.write(path, desired, path.stat().st_mode & 0o777)
             runner(['nginx','-t'])
             runner(['systemctl','reload','nginx'])
-            if verifier: verifier()
+            if verifier: verify_after_reload(verifier)
         return {'changed': True, 'site': str(path), 'certificate': 'reused', 'backup': str(tx.directory)}
     except BaseException:
         try:

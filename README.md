@@ -1,6 +1,6 @@
 # Connect an existing Hermes to OpenAny
 
-**v0.3.0** · Ubuntu/Debian VPS · Hermes already installed · Node.js 22+
+**v0.3.1** · Ubuntu/Debian VPS · Hermes already installed · Node.js 22+
 
 One installer enables the native API, configures the Hermes API Key and OpenAny Seller Key, runs the published OpenAny CLI's automatic file collector, and reuses your existing HTTPS domain and certificate. It adds `/openany/` routes beside your Dashboard. **You do not need another domain.**
 
@@ -8,7 +8,7 @@ One installer enables the native API, configures the Hermes API Key and OpenAny 
 
 ```bash
 curl --fail --location --silent --show-error \
-  'https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.3.0/install.sh' \
+  'https://github.com/openanysi/hermes-https-onboarding/releases/download/v0.3.1/install.sh' \
   --output install.sh
 bash install.sh \
   --domain hermes.example.com \
@@ -90,6 +90,6 @@ Private backup manifests identify the saved files for operator recovery. The adv
 
 ## Downloads and evidence
 
-[Release and ZIP](https://github.com/openanysi/hermes-https-onboarding/releases/tag/v0.3.0) · [Advanced API/Dashboard guide with screenshots](GUIDE.en.md) · [Validation report](VALIDATION.md)
+[Release and ZIP](https://github.com/openanysi/hermes-https-onboarding/releases/tag/v0.3.1) · [Advanced API/Dashboard guide with screenshots](GUIDE.en.md) · [Validation report](VALIDATION.md)
 
-Local tests cover real Nginx and installed published CLI code with loopback Hermes/platform fixtures. Real VPS systemd lifecycle, public TLS renewal, actual Hermes tool execution, OpenAny external reachability, remote Seller Key validity, hosted buyer downloads and actual settlement still require a provider-side acceptance test. No such deployment or paid test was performed for this release.
+Local tests cover real Nginx and installed published CLI code with loopback Hermes/platform fixtures. Version 0.3.1 also passed real Linux systemd parser checks and an authorized production VPS configuration/HTTPS acceptance, including unchanged service PIDs on repeat setup and preserved Dashboard access. The release fixes literal EnvironmentFile paths and waits for new Nginx workers before committing routing. A full server reboot, new public certificate issuance, actual Skill execution, OpenAny-to-provider task execution, remote Seller Key validity, hosted artifact downloads and actual settlement remain separate acceptance steps. No model task or paid verification was started.

@@ -161,6 +161,18 @@ class SetupTests(unittest.TestCase):
         self.assertFalse(args.public_ip)
         self.assertIsNone(args.email)
 
+    def test_wait_api_distinguishes_missing_process_credentials_from_api_failure(self):
+        runtime = self.module("setup_runtime")
+        common = importlib.import_module("common")
+        config = {"identity": {"username":"root", "uid":0, "gid":0, "home":"/root/.hermes", "login_home":"/root"}}
+        with patch.dict(os.environ):
+            runner = runtime.Runtime(config, Path("/opt/bundle"), Path("/tmp/state"))
+            runner.local_api = lambda: {"authenticated": True}
+            runner.credentials_loaded = lambda: False
+            with patch.object(runtime.time,"monotonic",side_effect=[0,0,121]), patch.object(runtime.time,"sleep"):
+                with self.assertRaisesRegex(common.Failure,"credentials.*EnvironmentFile"):
+                    runner.wait_api()
+
     def test_bootstrap_help_is_available_without_system_changes(self):
         self.assertTrue((ROOT / "install.sh").is_file())
         result = subprocess.run(["bash", str(ROOT / "install.sh"), "--help"], capture_output=True, text=True)
@@ -237,10 +249,11 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(setup.seller_input(args, data), "fixture-dev-seller-token")
             self.assertNotIn("OPENANY_SELLER_KEY", user.read_environment(Path(result["seller_env_file"])))
 
-    def test_dropin_quotes_path_and_never_contains_key_value(self):
+    def test_dropin_uses_literal_absolute_path_and_never_contains_key_value(self):
         user = self.module("setup_user")
         text = user.dropin_text(Path("/home/a space/100%/prod.env"))
-        self.assertIn('EnvironmentFile="/home/a space/100%%/prod.env"', text)
+        self.assertIn('EnvironmentFile=/home/a space/100%%/prod.env\n', text)
+        self.assertNotIn('EnvironmentFile="', text)
         self.assertNotIn("OPENANY_SELLER_KEY=", text)
 
     def test_systemd_environment_paths_are_utf8_not_json_unicode_escapes(self):

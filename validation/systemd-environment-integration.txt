@@ -1,0 +1,6 @@
+Linux provider host; systemd-analyze verify; temporary unit fixtures only.
+test_gateway_dropin_literal_path_with_spaces_percent_and_utf8 ... ok
+test_generated_cli_service_environment_file_is_accepted ... ok
+test_old_quoted_environment_file_is_reproduced_as_invalid ... ok
+Ran 3 tests in 0.165s
+OK

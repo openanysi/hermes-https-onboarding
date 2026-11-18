@@ -20,7 +20,7 @@ import setup_runtime
 import setup_user
 import cli_delivery
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 STATE = Path("/var/lib/openany-hermes/setup")
 
 

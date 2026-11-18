@@ -44,6 +44,8 @@ class CliDeliveryTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(Path(result['environment_file']).stat().st_mode),0o600)
             service=Path(result['unit_file']).read_text()
             self.assertIn('seller hermes serve -j',service)
+            self.assertIn('EnvironmentFile='+str(Path(result['environment_file'])).replace('%','%%')+'\n',service)
+            self.assertNotIn('EnvironmentFile="',service)
             self.assertNotIn(api,service)
             self.assertNotIn('fixture-dev-seller',json.dumps(result))
             repeated=cli.configure(home,'dev',8642,8791,'/node/bin/node','/tools/openany-dev.js',Path(tmp)/'user-units')

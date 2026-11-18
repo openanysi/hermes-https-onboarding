@@ -290,14 +290,19 @@ print(json.dumps({name:str(Path(value).resolve()) if value else None for name,va
 
     def wait_api(self):
         deadline = time.monotonic() + 120
+        last_api_ok = False
         while time.monotonic() < deadline:
             try:
                 self.local_api()
+                last_api_ok = True
                 if self.credentials_loaded():
                     return
                 time.sleep(2)
             except common.Failure:
+                last_api_ok = False
                 time.sleep(2)
+        if last_api_ok:
+            raise common.Failure("Gateway API is reachable but selected credentials were not loaded. Review the service EnvironmentFile configuration.")
         raise common.Failure("Gateway did not provide the authenticated loopback API within 120 seconds.")
 
     def record_runtime(self):

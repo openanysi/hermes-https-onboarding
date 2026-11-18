@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-OPENANY_SETUP_VERSION=0.3.0
+OPENANY_SETUP_VERSION=0.3.1
 
 for OPENANY_ARGUMENT in "$@"; do
     if [[ "$OPENANY_ARGUMENT" == --version ]]; then
@@ -99,7 +99,7 @@ fi
 OPENANY_BUNDLE_POINTER=/var/lib/openany-hermes/setup/current-bundle
 if [[ "$OPENANY_STATUS" == 1 && $EUID -eq 0 && -f "$OPENANY_BUNDLE_POINTER" && ! -L "$OPENANY_BUNDLE_POINTER" && -O "$OPENANY_BUNDLE_POINTER" ]]; then
     IFS= read -r OPENANY_INSTALLED_BUNDLE < "$OPENANY_BUNDLE_POINTER"
-    if [[ "$OPENANY_INSTALLED_BUNDLE" == /opt/openany-hermes-onboarding/0.3.0-* && -f "$OPENANY_INSTALLED_BUNDLE/scripts/setup.py" ]]; then
+    if [[ "$OPENANY_INSTALLED_BUNDLE" == /opt/openany-hermes-onboarding/0.3.1-* && -f "$OPENANY_INSTALLED_BUNDLE/scripts/setup.py" ]]; then
         exec /usr/bin/python3 -B "$OPENANY_INSTALLED_BUNDLE/scripts/setup.py" "$@"
     fi
 fi

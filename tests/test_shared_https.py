@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -90,7 +91,7 @@ class SharedHttpsTests(unittest.TestCase):
             path=Path(tmp)/'site.conf';path.write_text(SITE)
             site=shared.select_site({str(path):SITE})
             def verify(): raise shared.Failure('fixture authenticated discovery failed')
-            with self.assertRaises(shared.Failure):
+            with patch('nginx_shared.time.sleep'), self.assertRaises(shared.Failure):
                 shared.apply_site(site,8790,Path(tmp)/'backups',lambda args:'',verify)
             self.assertEqual(path.read_text(),SITE)
 
@@ -101,6 +102,23 @@ class SharedHttpsTests(unittest.TestCase):
         result=shared.patch_site(source,site,8790)
         self.assertIn('auth_request /dashboard-auth;',result)
         self.assertIn('auth_request off;',result)
+
+    def test_reload_waits_for_new_worker_routing_before_accepting_or_rolling_back(self):
+        shared = self.module()
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'site.conf';path.write_text(SITE)
+            site=shared.select_site({str(path):SITE})
+            attempts=[]
+            def verify():
+                attempts.append(1)
+                if len(attempts)==1:raise shared.Failure('old worker returned Dashboard redirect')
+                return {'authenticated':True}
+            with patch('nginx_shared.time.sleep',create=True) as sleep:
+                result=shared.apply_site(site,8790,Path(tmp)/'backups',lambda args:'',verify)
+            self.assertTrue(result['changed'])
+            self.assertEqual(len(attempts),2)
+            self.assertIn('location ^~ /openany/',path.read_text())
+            sleep.assert_called_once_with(1)
 
     def test_sites_enabled_symlink_is_preserved_when_editing_actual_site(self):
         shared = self.module()

@@ -67,7 +67,7 @@ def configure(home, environment, native_port, relay_port, node_bin, cli_bin, uni
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     service_file = common.regular_file(directory / unit)
     service = ('# Managed by OpenAny Hermes CLI setup v1\n[Unit]\nDescription=OpenAny Hermes CLI automatic file delivery\nAfter=network.target\n\n[Service]\nType=simple\n'
-               + 'EnvironmentFile=' + quote(env_file) + '\n'
+               + setup_user.environment_file_line(env_file)
                + 'Environment=' + quote('PATH=' + str(Path(node_bin).parent) + ':/usr/local/bin:/usr/bin:/bin') + '\n'
                + 'ExecStart=' + command_quote(node_bin) + ' ' + command_quote(cli_bin) + ' seller hermes serve -j\n'
                + 'Restart=on-failure\nRestartSec=5\nUMask=0077\nTimeoutStopSec=45\n\n[Install]\nWantedBy=default.target\n').encode()
